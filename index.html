@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversation Wizard · Sandbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sky:#55B4E4;          /* JustAnswer logo blue */
+  --blue:#1B75BC;         /* primary CTA blue */
+  --blue-deep:#12588F;
+  --blue-wash:#EAF5FC;    /* light sky wash */
+  --blue-wash-2:#F4FAFE;
+  --bg:#F2F7FB;
+  --card:#FFFFFF;
+  --text:#22333F;
+  --text-soft:#5A6B77;
+  --text-faint:#93A3AE;
+  --border:#DCE8F0;
+  --border-strong:#BAD3E3;
+  --red:#D93B2B;
+  --red-wash:#FDEEEC;
+  --green:#1E8E5A;
+  --green-wash:#E9F7F0;
+  --amber:#B47708;
+  --amber-wash:#FCF3E0;
+  --plum:#7A4390;
+  --plum-wash:#F5EDF8;
+  --sans:'Figtree',-apple-system,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+  --shadow:0 1px 3px rgba(18,88,143,.08),0 4px 14px rgba(18,88,143,.07);
+  --shadow-lg:0 4px 10px rgba(18,88,143,.10),0 12px 32px rgba(18,88,143,.12);
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--sans);color:var(--text);background:var(--bg);font-size:14.5px;line-height:1.5}
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;gap:14px;padding:10px 20px;flex:none;
+  background:var(--card);border-bottom:1px solid var(--border);
+  animation:drop .45s cubic-bezier(.2,.9,.3,1) both;
+}
+.logo{display:flex;align-items:center;gap:8px}
+.logo .bubble{
+  background:var(--sky);color:#fff;font-weight:800;font-size:15px;letter-spacing:-.02em;
+  padding:5px 11px;border-radius:12px 12px 12px 3px;transform:rotate(-3deg);
+}
+.logo .word{font-weight:800;font-size:19px;letter-spacing:-.03em;color:var(--text)}
+.logo .word small{font-weight:600;color:var(--text-faint);font-size:12px;display:block;margin-top:-3px;letter-spacing:0}
+header .spacer{flex:1}
+.hdr-ctl{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-soft);font-weight:600}
+
+select,input[type=text],textarea{
+  font-family:var(--sans);font-size:14px;color:var(--text);
+  background:var(--card);border:1.5px solid var(--border-strong);border-radius:10px;
+  padding:8px 11px;outline:none;transition:border-color .15s, box-shadow .15s;
+}
+select:focus,input[type=text]:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(27,117,188,.15)}
+label.fld{display:block;margin-bottom:11px}
+label.fld span{display:block;font-size:12px;font-weight:700;color:var(--text-soft);margin-bottom:4px;letter-spacing:.02em}
+label.fld input,label.fld textarea,label.fld select{width:100%}
+textarea{resize:vertical}
+
+button{
+  font-family:var(--sans);font-weight:700;font-size:13.5px;cursor:pointer;
+  border:1.5px solid var(--border-strong);border-radius:999px;background:var(--card);color:var(--blue-deep);
+  padding:8px 16px;transition:all .15s ease;
+}
+button:hover{border-color:var(--blue);background:var(--blue-wash)}
+button:active{transform:scale(.97)}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:var(--shadow)}
+button.primary:hover{background:var(--blue-deep);border-color:var(--blue-deep)}
+button.subtle{border-color:transparent;background:transparent;color:var(--blue)}
+button.subtle:hover{background:var(--blue-wash)}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+
+/* ---------- layout ---------- */
+main{display:flex;flex:1;min-height:0}
+.panel{display:flex;flex-direction:column;min-height:0}
+#left{width:320px;flex:none;border-right:1px solid var(--border);background:var(--card);animation:fadeup .45s .06s both}
+#center{flex:1;min-width:340px;animation:fadeup .45s .12s both}
+#right{width:370px;flex:none;border-left:1px solid var(--border);background:var(--card);animation:fadeup .45s .18s both}
+@media (max-width:1200px){ #left{width:270px} #right{width:320px} }
+@media (max-width:940px){
+  main{flex-direction:column;overflow-y:auto}
+  #left,#right{width:100%;border:none;border-bottom:1px solid var(--border)}
+  #left .panel-body{max-height:44vh}
+  #center{min-width:0;min-height:65vh;border-bottom:1px solid var(--border)}
+  .panel{flex:none}
+  #thread{min-height:340px}
+}
+@keyframes fadeup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+.panel-head{
+  padding:12px 18px;border-bottom:1px solid var(--border);flex:none;
+  font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);
+  display:flex;align-items:center;gap:8px;
+}
+.panel-body{flex:1;overflow-y:auto;padding:16px}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;background:var(--bg);border-radius:999px;padding:4px;margin-bottom:14px}
+.tabs button{flex:1;border:none;border-radius:999px;padding:8px 4px;font-weight:600;background:transparent;color:var(--text-soft)}
+.tabs button:hover{background:rgba(255,255,255,.6)}
+.tabs button.on{background:var(--card);color:var(--blue-deep);font-weight:700;box-shadow:var(--shadow)}
+
+/* ---------- dataset ---------- */
+.dropzone{
+  border:1.5px dashed var(--border-strong);border-radius:var(--r);background:var(--blue-wash-2);
+  padding:16px 12px;text-align:center;color:var(--text-soft);font-size:12.5px;cursor:pointer;margin-bottom:12px;
+  transition:all .15s;
+}
+.dropzone:hover,.dropzone.drag{background:var(--blue-wash);border-color:var(--sky)}
+.dropzone strong{color:var(--blue)}
+#ds-count{font-size:12px;font-weight:700;color:var(--green);margin:10px 0 6px;display:none}
+#ds-list{list-style:none;margin-top:6px}
+#ds-list li{
+  background:var(--card);border:1.5px solid var(--border);border-radius:12px;
+  padding:9px 12px;margin-bottom:8px;cursor:pointer;font-size:12.5px;transition:all .15s;
+}
+#ds-list li:hover{border-color:var(--sky);box-shadow:var(--shadow)}
+#ds-list li.sel{border-color:var(--blue);background:var(--blue-wash);box-shadow:var(--shadow)}
+#ds-list li .idx{font-size:10.5px;font-weight:700;color:var(--text-faint);display:block;letter-spacing:.03em}
+#ds-list li .snip{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+
+/* ---------- thread ---------- */
+#thread-meta{padding:12px 22px;border-bottom:1px solid var(--border);background:var(--card);flex:none;display:none}
+#thread-meta .who{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+#thread-meta .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chip{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--text-soft)}
+.chip.blue{background:var(--blue-wash);color:var(--blue-deep)}
+#summary-line{font-size:12.5px;color:var(--text-soft);margin-top:5px}
+
+#thread{flex:1;overflow-y:auto;padding:22px 24px;display:flex;flex-direction:column;gap:12px}
+#thread > *{flex:none}
+.msg{max-width:70%;padding:10px 15px;border-radius:16px;animation:pop .22s ease both;box-shadow:var(--shadow)}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+.msg .tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;display:block;margin-bottom:3px}
+.msg.customer{align-self:flex-start;background:var(--card);border:1px solid var(--border);border-bottom-left-radius:4px}
+.msg.customer .tag{color:var(--text-faint)}
+.msg.expert{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:4px}
+.msg.expert .tag{color:rgba(255,255,255,.75)}
+
+/* coach bubbles (talking with the agent) */
+.msg.coach-user{align-self:flex-end;background:var(--card);border:1.5px dashed var(--border-strong);border-bottom-right-radius:4px;color:var(--text-soft)}
+.msg.coach-user .tag{color:var(--sky)}
+.msg.coach{align-self:flex-start;background:var(--blue-wash);border:1px solid var(--sky);border-bottom-left-radius:4px}
+.msg.coach .tag{color:var(--blue)}
+
+/* inline recommendation card */
+.rec-inline{
+  align-self:stretch;max-width:640px;width:100%;margin:4px auto;
+  background:var(--card);border:1.5px solid var(--sky);border-radius:var(--r);
+  box-shadow:var(--shadow-lg);overflow:hidden;animation:pop .3s ease both;
+}
+.rec-inline .rec-top{
+  display:flex;align-items:center;gap:8px;padding:9px 15px;background:var(--blue-wash);
+  border-bottom:1px solid var(--border);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--blue-deep);
+}
+.rec-inline .rec-top .spark{font-size:14px}
+.rec-inline .rec-main{padding:14px 16px}
+.action-chip{
+  display:inline-block;font-weight:800;font-size:15px;letter-spacing:-.01em;
+  padding:6px 14px;border-radius:999px;border:1.5px solid;
+}
+.a-emergency{color:var(--red);background:var(--red-wash);border-color:var(--red)}
+.a-info{color:var(--blue-deep);background:var(--blue-wash);border-color:var(--blue)}
+.a-live{color:var(--green);background:var(--green-wash);border-color:var(--green)}
+.a-extended{color:var(--plum);background:var(--plum-wash);border-color:var(--plum)}
+.a-doc{color:var(--amber);background:var(--amber-wash);border-color:var(--amber)}
+.a-other{color:var(--text);background:var(--bg);border-color:var(--text-soft)}
+.rec-inline .pills{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--text-soft)}
+.pill.hi{background:var(--green-wash);color:var(--green)}
+.pill.lo{background:var(--amber-wash);color:var(--amber)}
+.pill.paid{background:var(--plum-wash);color:var(--plum)}
+.pill.price{background:var(--blue-wash);color:var(--blue-deep)}
+.rec-inline .why{font-size:13px;color:var(--text-soft);margin-top:10px}
+.rec-inline .why b{color:var(--text)}
+.draft{
+  margin-top:10px;background:var(--blue-wash-2);border:1px solid var(--border);
+  border-radius:12px;padding:11px 13px;font-size:14px;
+}
+.draft .dtag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);display:block;margin-bottom:4px}
+.rec-inline .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.rec-inline.stale .btns{display:none}
+.rec-inline.stale{opacity:.72;border-color:var(--border-strong)}
+.rec-inline .accepted-note{display:none;margin-top:12px;font-size:12.5px;font-weight:700;color:var(--green)}
+.rec-inline.accepted .accepted-note{display:block}
+.rec-inline.accepted .btns{display:none}
+
+#empty-state{margin:auto;text-align:center;max-width:420px;color:var(--text-soft);padding:20px}
+#empty-state .big{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.2;margin-bottom:10px}
+#empty-state .big em{font-style:normal;color:var(--blue)}
+
+/* typing indicator */
+.typing{align-self:flex-start;display:flex;gap:5px;padding:12px 16px;background:var(--blue-wash);border:1px solid var(--sky);border-radius:16px;border-bottom-left-radius:4px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:pl .9s infinite ease-in-out}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes pl{0%,100%{transform:scale(.6);opacity:.4}50%{transform:scale(1);opacity:1}}
+
+/* ---------- composer ---------- */
+#composer{flex:none;border-top:1px solid var(--border);background:var(--card);padding:12px 20px;display:none;flex-direction:column;gap:8px}
+.mode-row{display:flex;align-items:center;gap:8px}
+.mode-toggle{display:flex;background:var(--bg);border-radius:999px;padding:3px}
+.mode-toggle button{border:none;background:transparent;border-radius:999px;padding:6px 14px;font-weight:600;font-size:12.5px;color:var(--text-soft)}
+.mode-toggle button.on{background:var(--blue);color:#fff;font-weight:700;box-shadow:var(--shadow)}
+#mode-hint{font-size:12px;color:var(--text-faint)}
+.input-row{display:flex;gap:10px;align-items:flex-end}
+#reply-box{flex:1;height:58px;min-height:44px;border-radius:14px}
+.input-row .col{display:flex;flex-direction:column;gap:6px}
+
+/* ---------- right rail ---------- */
+#rec-empty{padding:34px 20px;text-align:center;color:var(--text-faint);font-size:13px}
+#rec-empty .glyph{font-size:36px;display:block;margin-bottom:10px;opacity:.4}
+#rec-error{display:none;margin:14px;padding:12px;border:1.5px solid var(--red);border-radius:12px;background:var(--red-wash);color:var(--red);font-size:12.5px;font-weight:600}
+#rec{display:none}
+.rail-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 15px;margin-bottom:12px}
+.rail-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);margin-bottom:6px}
+#r-reason,#r-issue{font-size:13px}
+#r-issue{background:var(--blue-wash-2);border:1px dashed var(--border-strong);border-radius:10px;padding:8px 10px}
+.lim{font-family:var(--mono);font-size:10px;margin-top:6px}
+.lim .ok{color:var(--green)} .lim .bad{color:var(--red);font-weight:700}
+details.raw{margin:2px}
+details.raw summary{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;color:var(--text-soft)}
+details.raw pre{
+  margin-top:8px;background:#132B3D;color:#BFE3F7;border-radius:12px;padding:12px;
+  font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-word;
+}
+#r-meta{font-family:var(--mono);font-size:10px;color:var(--text-faint);margin-top:8px;text-align:right}
+
+/* ---------- prompt drawer ---------- */
+#drawer{
+  position:fixed;inset:0 0 0 auto;width:min(720px,94vw);background:var(--card);
+  border-left:1px solid var(--border);box-shadow:-12px 0 40px rgba(18,88,143,.2);
+  transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.9,.3,1);
+  z-index:40;display:flex;flex-direction:column;
+}
+#drawer.open{transform:none}
+#drawer .panel-body{display:flex;flex-direction:column}
+#prompt-editor{flex:1;font-family:var(--mono);font-size:12px;line-height:1.55;min-height:0;border-radius:12px}
+#scrim{position:fixed;inset:0;background:rgba(18,43,61,.4);opacity:0;pointer-events:none;transition:opacity .25s;z-index:30}
+#scrim.open{opacity:1;pointer-events:auto}
+.hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">
+      <span class="bubble">conversation</span>
+      <span class="word">wizard<small>sandbox</small></span>
+    </div>
+    <span class="spacer"></span>
+    <div class="hdr-ctl">
+      Model
+      <select id="model">
+        <option value="claude-opus-5" selected>claude-opus-5</option>
+        <option value="claude-sonnet-5">claude-sonnet-5</option>
+        <option value="claude-haiku-4-5">claude-haiku-4-5</option>
+        <option value="mock">mock (no API)</option>
+      </select>
+    </div>
+    <button class="subtle" id="btn-drawer">Edit prompt</button>
+  </header>
+
+  <main>
+    <!-- ===== LEFT : intake ===== -->
+    <section class="panel" id="left">
+      <div class="panel-head">Intake</div>
+      <div class="panel-body">
+        <div class="tabs">
+          <button id="tab-dataset" class="on">Dataset</button>
+          <button id="tab-manual">Manual intake</button>
+        </div>
+
+        <div id="pane-dataset">
+          <div class="dropzone" id="dropzone">
+            <strong>Drop a file</strong> or click to browse<br>
+            any format — JSON · JSONL · CSV · transcripts · plain text<br>up to 5,000 conversations
+            <input type="file" id="file-input" hidden>
+          </div>
+          <label class="fld"><span>…or paste conversations — any format</span>
+            <textarea id="paste-box" rows="4" placeholder="Paste anything: JSON, CSV, chat exports with timestamps, Q&amp;A, or raw text. Separate multiple conversations with --- or blank lines."></textarea>
+          </label>
+          <button id="btn-parse" style="width:100%">Parse pasted text</button>
+          <div id="ds-count"></div>
+          <label class="fld" id="ds-search-wrap" style="display:none"><span>Search loaded conversations</span>
+            <input type="text" id="ds-search" placeholder="filter by text…">
+          </label>
+          <ul id="ds-list"></ul>
+        </div>
+
+        <div id="pane-manual" style="display:none">
+          <label class="fld"><span>First name</span><input type="text" id="m-first" placeholder="Maya"></label>
+          <label class="fld"><span>Last name</span><input type="text" id="m-last" placeholder="Okafor"></label>
+          <label class="fld"><span>Vertical</span>
+            <input type="text" id="m-vertical" list="verticals" placeholder="dermatology">
+            <datalist id="verticals">
+              <option>dermatology</option><option>mental health</option><option>cardiology</option>
+              <option>endocrinology</option><option>pediatrics</option><option>OB/GYN</option>
+              <option>gastroenterology</option><option>neurology</option><option>urology</option>
+              <option>oncology</option><option>pharmacy</option><option>general medicine</option>
+            </datalist>
+          </label>
+          <label class="fld"><span>Issue summary (intake)</span>
+            <textarea id="m-summary" rows="3" placeholder="Recurring rash on both forearms for 3 weeks, OTC hydrocortisone not helping…"></textarea>
+          </label>
+          <label class="fld"><span>Previous conversation</span>
+            <textarea id="m-convo" rows="7" placeholder="Customer: Hi, I've had this rash for weeks…&#10;Expert: Sorry to hear that. Where exactly is it?&#10;Customer: Both forearms, and it's spreading."></textarea>
+            <div class="hint">One message per line. Prefix with <b>Customer:</b> or <b>Expert:</b> — unprefixed lines are treated as the customer.</div>
+          </label>
+          <button class="primary" id="btn-manual-load" style="width:100%">Start conversation →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== CENTER : conversation ===== -->
+    <section class="panel" id="center">
+      <div id="thread-meta">
+        <div class="who" id="meta-name">Conversation</div>
+        <div class="chips" id="meta-chips"></div>
+        <div id="summary-line"></div>
+      </div>
+      <div id="thread">
+        <div id="empty-state">
+          <span class="big">Load a conversation, then <em>talk it through with the wizard.</em></span>
+          <p>Pick a conversation from a dataset, or use manual intake. The wizard reads the thread and drops its recommendation right into the chat — accept it, ask the wizard questions, or have it rewrite the draft. Reply as the customer to keep testing turn by turn.</p>
+        </div>
+      </div>
+      <div id="composer">
+        <div class="mode-row">
+          <div class="mode-toggle">
+            <button id="mode-customer" class="on">💬 As customer</button>
+            <button id="mode-coach">✨ To wizard</button>
+          </div>
+          <span id="mode-hint">Replies as the customer — the wizard re-runs after each message.</span>
+          <span style="flex:1"></span>
+          <button class="subtle" id="btn-rerun">↻ Re-run wizard</button>
+        </div>
+        <div class="input-row">
+          <textarea id="reply-box" placeholder="Reply as the customer… (Enter to send, Shift+Enter for newline)"></textarea>
+          <div class="col"><button class="primary" id="btn-send">Send</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== RIGHT : latest recommendation detail ===== -->
+    <section class="panel" id="right">
+      <div class="panel-head">Latest recommendation · QA</div>
+      <div class="panel-body">
+        <div id="rec-empty"><span class="glyph">💡</span>Guardrail checks, character limits, and raw JSON for the wizard's latest recommendation will appear here.</div>
+        <div id="rec-error"></div>
+        <div id="rec">
+          <div class="rail-card">
+            <div class="rail-label">Reason · shown to the expert only</div>
+            <div id="r-reason"></div>
+            <div class="lim" id="lim-reason"></div>
+          </div>
+          <div class="rail-card">
+            <div class="rail-label">Issue label · context badge</div>
+            <div id="r-issue"></div>
+            <div class="lim" id="lim-issue"></div>
+          </div>
+          <div class="rail-card">
+            <div class="rail-label">Draft message length</div>
+            <div class="lim" id="lim-message"></div>
+          </div>
+          <details class="raw"><summary>Raw JSON output</summary><pre id="r-raw"></pre></details>
+          <div id="r-meta"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- prompt drawer -->
+<div id="scrim"></div>
+<div id="drawer">
+  <div class="panel-head">Prompt template
+    <span style="flex:1"></span>
+    <button id="btn-prompt-reset">Reset to file</button>
+    <button class="primary" id="btn-prompt-save">Use this prompt</button>
+    <button class="subtle" id="btn-drawer-close">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="hint" style="margin-bottom:8px">Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b>, <b>{{issue_summary}}</b> are filled on every run. Edits apply to this browser only (saved locally); the file on disk is untouched.</div>
+    <textarea id="prompt-editor" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script>
+/* ================= state ================= */
+const S = {
+  dataset: [],
+  selected: -1,
+  thread: [],            // visible items: {kind:'customer'|'expert'|'coach'|'coach-user'|'rec', ...}
+  meta: { name:'', vertical:'', issue_summary:'' },
+  promptOverride: localStorage.getItem('cc_prompt_override') || '',
+  promptFile: '',
+  busy: false,
+  mode: 'customer',      // composer mode: 'customer' | 'coach'
+  lastRec: null,         // latest parsed recommendation object
+  coachHistory: [],      // chat with the agent: [{role:'user'|'assistant', content}]
+};
+const $ = (id) => document.getElementById(id);
+function esc(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+/* ================= parsing — accepts any format ================= */
+const CUST_RE = /^(customer|user|lead|patient|client|caller|visitor|guest|member|human|inbound|me|q|question)$/i;
+const EXP_RE  = /^(expert|professional|doctor|dr\.?|nurse|pharmacist|physician|bot|ai|assistant|agent|operator|staff|admin|system|outbound|coach|support|advisor|rep|a|answer|response)$/i;
+const EXP_HINT = /\b(dr\.?|md|do|np|pa|rn|doctor|nurse|pharm)\b/i;
+const TEXT_KEYS = ['text','content','message','body','msg','value','utterance'];
+const ROLE_KEYS = ['role','speaker','sender','from','author','who','type','side','sender_type','author_type','user_type','sender_role','author_role','participant','direction','origin','message_type','usertype'];
+const BOOL_EXP_KEYS  = ['is_bot','is_expert','is_agent','is_ai','is_operator','from_expert','bot'];
+const BOOL_CUST_KEYS = ['is_customer','is_user','is_visitor','from_customer'];
+function boolFlagKind(m){
+  for (const k of BOOL_EXP_KEYS)  { const v = firstKey(m,[k]); if (v === true) return 'expert';   if (v === false) return 'customer'; }
+  for (const k of BOOL_CUST_KEYS) { const v = firstKey(m,[k]); if (v === true) return 'customer'; if (v === false) return 'expert'; }
+  return null;
+}
+const MSG_KEYS  = ['messages','conversation','turns','thread','dialogue','dialog','chat','transcript','history','exchanges'];
+
+// Unknown speaker names: first distinct name = customer, later names = expert.
+function speakerKind(label, order){
+  const l = String(label).trim();
+  if (CUST_RE.test(l)) return 'customer';
+  if (EXP_RE.test(l) || EXP_HINT.test(l)) return 'expert';
+  const key = l.toLowerCase();
+  if (!(key in order.map)) { order.map[key] = order.n === 0 ? 'customer' : 'expert'; order.n++; }
+  return order.map[key];
+}
+
+// "[10:32] Name: text" / "Name - text" / "Q: text" etc. (bold markers stripped first)
+const LINE_RE = /^\s*(?:\[[^\]]*\]\s*|\(?\d{1,2}[:.]\d{2}(?::\d{2})?\s*(?:am|pm)?\)?\s*[-–]?\s*)?([A-Za-z][\w .,'()-]{0,40}?)\s*[:–>-]\s+(.+)$/;
+
+function parseConvoText(text){
+  const msgs = [];
+  const order = { map:{}, n:0 };
+  for (const rawLine of String(text).split('\n')) {
+    const line = rawLine.trim().replace(/\*\*|__/g, '');
+    if (!line || /^[-=*_~#]{3,}$/.test(line)) continue;
+    const m = line.match(LINE_RE);
+    if (m && m[2]) {
+      msgs.push({ kind: speakerKind(m[1], order), text: m[2] });
+    } else if (msgs.length) {
+      msgs[msgs.length-1].text += '\n' + line;
+    } else {
+      msgs.push({ kind:'customer', text: line });
+    }
+  }
+  return msgs;
+}
+
+/* --- flexible JSON helpers --- */
+function firstKey(o, keys){
+  if (!o || typeof o !== 'object') return undefined;
+  for (const k of keys) if (o[k] != null) return o[k];
+  const lower = {};
+  for (const k of Object.keys(o)) lower[k.toLowerCase()] = k;
+  for (const k of keys) if (lower[k] != null && o[lower[k]] != null) return o[lower[k]];
+  return undefined;
+}
+function strKey(o, keys){ const v = firstKey(o, keys); return (typeof v === 'string' || typeof v === 'number') ? String(v) : ''; }
+function msgText(m){ const v = firstKey(m, TEXT_KEYS); return v == null ? null : String(v); }
+function looksLikeMessage(m){ return !!(m && typeof m === 'object' && !Array.isArray(m) && msgText(m) != null); }
+
+function toMessage(m, order){
+  if (typeof m === 'string') { const p = parseConvoText(m); return p.length === 1 ? p[0] : { kind:'customer', text:m }; }
+  if (!m || typeof m !== 'object') return { kind:'customer', text: String(m) };
+  const flagged = boolFlagKind(m);
+  const roleRaw = strKey(m, ROLE_KEYS);
+  const kind = flagged || (roleRaw ? speakerKind(roleRaw, order) : 'customer');
+  return { kind, text: msgText(m) ?? JSON.stringify(m) };
+}
+
+// Search an object (up to 3 levels deep) for something that looks like a message list.
+function findMessagesDeep(o, depth){
+  if (depth > 3 || !o || typeof o !== 'object') return null;
+  const v = firstKey(o, MSG_KEYS);
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) return v;
+  for (const k of Object.keys(o)) {
+    const val = o[k];
+    if (Array.isArray(val) && val.length && val.every(looksLikeMessage)) return val;
+  }
+  for (const k of Object.keys(o)) {
+    const r = findMessagesDeep(o[k], depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+function normalizeConvo(x){
+  if (typeof x === 'string') return { name:'', vertical:'', issue_summary:'', messages: parseConvoText(x) };
+  if (Array.isArray(x)) {
+    const order = { map:{}, n:0 };
+    return { name:'', vertical:'', issue_summary:'', messages: x.map(m => toMessage(m, order)).filter(m => m.text) };
+  }
+  if (x && typeof x === 'object') {
+    const order = { map:{}, n:0 };
+    const raw = findMessagesDeep(x, 0);
+    let messages = [];
+    if (typeof raw === 'string') messages = parseConvoText(raw);
+    else if (Array.isArray(raw)) messages = raw.map(m => toMessage(m, order)).filter(m => m.text);
+    else if (looksLikeMessage(x)) messages = [toMessage(x, order)];
+    const first = [strKey(x,['first_name','firstname']), strKey(x,['last_name','lastname'])].filter(Boolean).join(' ');
+    return {
+      name: strKey(x, ['name','customer_name','customer','patient']) || first,
+      vertical: strKey(x, ['vertical','category','specialty','topic']),
+      issue_summary: strKey(x, ['issue_summary','summary','intake','intake_summary','issue','description']),
+      messages,
+    };
+  }
+  return { name:'', vertical:'', issue_summary:'', messages: [] };
+}
+
+function tryJson(s){ try { return JSON.parse(s); } catch(_) { return undefined; } }
+
+function jsonToConvos(j){
+  if (Array.isArray(j)) {
+    // an array of message objects is ONE conversation, not many
+    if (j.length && j.every(looksLikeMessage)) return [normalizeConvo(j)];
+    return j.map(normalizeConvo);
+  }
+  if (j && typeof j === 'object') {
+    // object wrapping an array of conversations under any key
+    for (const k of Object.keys(j)) {
+      const v = j[k];
+      if (Array.isArray(v) && v.length && v.every(it => it && typeof it === 'object') && !v.every(looksLikeMessage)) {
+        const convos = v.map(normalizeConvo);
+        if (convos.some(c => c.messages.length)) return convos;
+      }
+    }
+    return [normalizeConvo(j)];
+  }
+  return [normalizeConvo(String(j))];
+}
+
+/* --- CSV / TSV --- */
+function parseDelimited(text, d){
+  const rows = [[]]; let cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === d) { rows[rows.length-1].push(cur); cur = ''; }
+    else if (ch === '\n') { rows[rows.length-1].push(cur); cur = ''; rows.push([]); }
+    else if (ch !== '\r') cur += ch;
+  }
+  rows[rows.length-1].push(cur);
+  return rows.filter(r => r.length > 1 || (r[0] || '').trim());
+}
+
+function tryCsv(text){
+  const nl = text.indexOf('\n');
+  if (nl === -1) return null;
+  const firstLine = text.slice(0, nl);
+  let delim = null;
+  for (const d of ['\t', ',', ';']) if (firstLine.split(d).length > 1) { delim = d; break; }
+  if (!delim) return null;
+  const rows = parseDelimited(text, delim);
+  if (rows.length < 2) return null;
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  // only treat as CSV when the header actually looks like column names
+  if (!header.every(h => /^[\w .#/-]{0,30}$/.test(h))) return null;
+  const ti = header.findIndex(h => /^(text|message|msg|content|body|utterance)$/.test(h));
+  const ri = header.findIndex(h => /^(role|speaker|sender|from|author|who|side)$/.test(h));
+  const ci = header.findIndex(h => /(conversation|conv|thread|session|case|ticket|chat)(_?id)?$/.test(h));
+  if (ti === -1 || (ri === -1 && ci === -1)) return null;
+  const groups = new Map();
+  for (const row of rows.slice(1)) {
+    const t = (row[ti] || '').trim();
+    if (!t) continue;
+    const key = ci !== -1 ? (row[ci] || 'all') : 'all';
+    if (!groups.has(key)) groups.set(key, { name:'', vertical:'', issue_summary:'', messages: [], _order:{ map:{}, n:0 } });
+    const g = groups.get(key);
+    const kind = ri !== -1 ? speakerKind(row[ri] || 'customer', g._order) : 'customer';
+    g.messages.push({ kind, text: t });
+  }
+  const convos = [...groups.values()];
+  convos.forEach(g => delete g._order);
+  return convos.length ? convos : null;
+}
+
+function parseDataset(text){
+  text = text.trim();
+  if (!text) return [];
+  // 1) whole input is JSON
+  const j = tryJson(text);
+  if (j !== undefined) return jsonToConvos(j);
+  // 2) JSONL — one JSON value per line
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length > 1 && lines.every(l => l.startsWith('{') || l.startsWith('['))) {
+    const objs = lines.map(tryJson);
+    if (objs.every(o => o !== undefined)) {
+      if (objs.every(looksLikeMessage)) return [normalizeConvo(objs)];
+      return objs.flatMap(jsonToConvos);
+    }
+  }
+  // 3) CSV / TSV with a recognizable header
+  const csv = tryCsv(text);
+  if (csv) return csv;
+  // 4) plain text: split on ---/===/*** lines, big gaps, or "Conversation N" headers
+  const chunks = text.split(/\n\s*(?:[-=*_~]{3,})\s*\n|\n{3,}|\n(?=\s*(?:conversation|case|thread|ticket)\s*#?\d+\b)/i).filter(c => c.trim());
+  return chunks.map(c => normalizeConvo(c));
+}
+
+function loadDataset(text){
+  let convos = [];
+  try { convos = parseDataset(text); } catch(_) { convos = []; }
+  convos = convos.filter(c => c.messages.length);
+  let note = '';
+  if (convos.length > 5000) { convos = convos.slice(0,5000); note = ' (capped at 5,000)'; }
+  // never reject input: worst case, the whole paste becomes one customer message
+  if (!convos.length && String(text).trim()) {
+    convos = [{ name:'', vertical:'', issue_summary:'', messages: [{ kind:'customer', text: String(text).trim() }] }];
+  }
+  if (!convos.length) { alert('Nothing to parse — the input was empty.'); return; }
+  S.dataset = convos;
+  $('ds-count').style.display = 'block';
+  $('ds-count').textContent = `✓ ${convos.length.toLocaleString()} conversation${convos.length===1?'':'s'} loaded${note}`;
+  $('ds-search-wrap').style.display = convos.length > 8 ? 'block' : 'none';
+  renderDatasetList('');
+}
+
+function renderDatasetList(filter){
+  const list = $('ds-list');
+  list.innerHTML = '';
+  const f = filter.toLowerCase();
+  let shown = 0;
+  for (let i = 0; i < S.dataset.length && shown < 200; i++) {
+    const c = S.dataset[i];
+    const hay = (c.name+' '+c.vertical+' '+c.issue_summary+' '+c.messages.map(m=>m.text).join(' ')).toLowerCase();
+    if (f && !hay.includes(f)) continue;
+    shown++;
+    const li = document.createElement('li');
+    if (i === S.selected) li.classList.add('sel');
+    const label = c.issue_summary || (c.messages[0] ? c.messages[0].text : '');
+    li.innerHTML = `<span class="idx">#${i+1}${c.name? ' · '+esc(c.name):''}${c.vertical? ' · '+esc(c.vertical):''} · ${c.messages.length} msgs</span><span class="snip">${esc(label.slice(0,90))}</span>`;
+    li.onclick = () => selectConvo(i);
+    list.appendChild(li);
+  }
+  if (!shown) list.innerHTML = '<li style="cursor:default;color:var(--text-faint)">no matches</li>';
+}
+
+/* ================= conversation ================= */
+function selectConvo(i){
+  S.selected = i;
+  const c = S.dataset[i];
+  S.thread = c.messages.map(m => ({...m}));
+  S.meta = { name: c.name, vertical: c.vertical, issue_summary: c.issue_summary };
+  resetSession();
+  renderThread();
+  runCoach();
+}
+
+function loadManual(){
+  const first = $('m-first').value.trim(), last = $('m-last').value.trim();
+  const vertical = $('m-vertical').value.trim();
+  const summary = $('m-summary').value.trim();
+  const convo = $('m-convo').value.trim();
+  if (!summary && !convo) { alert('Give the coach something to work with: an issue summary or a previous conversation.'); return; }
+  S.selected = -1;
+  S.thread = convo ? parseConvoText(convo) : [];
+  S.meta = { name: [first,last].filter(Boolean).join(' '), vertical, issue_summary: summary };
+  resetSession();
+  renderThread();
+  runCoach();
+}
+
+function resetSession(){
+  S.lastRec = null;
+  S.coachHistory = [];
+  setMode('customer');
+  $('rec').style.display = 'none';
+  $('rec-error').style.display = 'none';
+  $('rec-empty').style.display = 'block';
+  renderDatasetList($('ds-search') ? ($('ds-search').value || '') : '');
+}
+
+function conversationSoFar(){
+  const msgs = S.thread.filter(m => m.kind === 'customer' || m.kind === 'expert');
+  if (!msgs.length) return '(no prior messages — this is the start of the conversation)';
+  return msgs.map(m => (m.kind === 'expert' ? 'Expert: ' : 'Customer: ') + m.text).join('\n');
+}
+function latestCustomerMessage(){
+  for (let i = S.thread.length-1; i >= 0; i--) if (S.thread[i].kind === 'customer') return S.thread[i].text;
+  return '';
+}
+function issueSummaryText(){
+  const bits = [];
+  if (S.meta.name) bits.push('Customer name: ' + S.meta.name);
+  if (S.meta.vertical) bits.push('Vertical: ' + S.meta.vertical);
+  if (S.meta.issue_summary) bits.push('Intake summary: ' + S.meta.issue_summary);
+  return bits.join('. ') || '(no intake summary provided)';
+}
+
+const ACTION_CLASS = [
+  [/emergency/i, 'a-emergency'],
+  [/request information/i, 'a-info'],
+  [/live consult/i, 'a-live'],
+  [/extended|beyond/i, 'a-extended'],
+  [/document review/i, 'a-doc'],
+];
+const PAID = /live consult|extended|beyond|document review/i;
+
+function renderThread(){
+  const t = $('thread');
+  t.innerHTML = '';
+  $('thread-meta').style.display = 'block';
+  $('composer').style.display = 'flex';
+  $('meta-name').textContent = S.meta.name || 'Unnamed customer';
+  const chips = $('meta-chips');
+  chips.innerHTML = '';
+  if (S.meta.vertical) chips.insertAdjacentHTML('beforeend', `<span class="chip blue">${esc(S.meta.vertical)}</span>`);
+  const msgCount = S.thread.filter(m => m.kind==='customer'||m.kind==='expert').length;
+  chips.insertAdjacentHTML('beforeend', `<span class="chip">${msgCount} message${msgCount===1?'':'s'}</span>`);
+  if (S.selected >= 0) chips.insertAdjacentHTML('beforeend', `<span class="chip">dataset #${S.selected+1}</span>`);
+  $('summary-line').textContent = S.meta.issue_summary ? 'Intake: ' + S.meta.issue_summary : '';
+
+  S.thread.forEach((item, idx) => {
+    if (item.kind === 'rec') { t.appendChild(recCard(item, idx)); return; }
+    const div = document.createElement('div');
+    div.className = 'msg ' + item.kind;
+    const tag = { customer:'Customer', expert:'Expert', coach:'✨ Wizard', 'coach-user':'You → Wizard' }[item.kind] || item.kind;
+    div.innerHTML = `<span class="tag">${tag}</span>${esc(item.text)}`;
+    if (item.kind === 'customer' || item.kind === 'expert') {
+      div.style.cursor = 'pointer';
+      div.title = 'Wrong speaker? Click to switch between Customer and Expert';
+      div.onclick = () => { item.kind = item.kind === 'customer' ? 'expert' : 'customer'; renderThread(); };
+    }
+    t.appendChild(div);
+  });
+  t.scrollTop = t.scrollHeight;
+}
+
+function recCard(item, idx){
+  const p = item.rec;
+  const card = document.createElement('div');
+  const isLatest = idx === S.thread.map(x=>x.kind).lastIndexOf('rec');
+  card.className = 'rec-inline' + (item.accepted ? ' accepted' : (!isLatest ? ' stale' : ''));
+  const cls = (ACTION_CLASS.find(([re]) => re.test(p.action||'')) || [null,'a-other'])[1];
+  const conf = String(p.confidence||'').toLowerCase();
+  const paid = PAID.test(p.action||'');
+  card.innerHTML = `
+    <div class="rec-top"><span class="spark">✨</span> Wizard recommendation</div>
+    <div class="rec-main">
+      <span class="action-chip ${cls}">${esc(p.action || '—')}</span>
+      <div class="pills">
+        <span class="pill ${conf==='high'?'hi':'lo'}">confidence: ${esc(conf||'?')}</span>
+        <span class="pill ${paid?'paid':''}">${paid?'paid add-on':'non-paid'}</span>
+        ${p.suggested_price && p.suggested_price!=='null' ? `<span class="pill price">${esc(String(p.suggested_price))}</span>` : ''}
+      </div>
+      <div class="why"><b>Why:</b> ${esc(p.reason || '—')}</div>
+      <div class="draft"><span class="dtag">Draft message to customer</span>${esc(p.message || '(empty message — prompt violation!)')}</div>
+      <div class="btns">
+        <button class="primary btn-accept">✓ Accept &amp; send as expert</button>
+        <button class="btn-rewrite">✎ Ask wizard to rewrite</button>
+      </div>
+      <div class="accepted-note">✓ Accepted — sent as the expert's reply</div>
+    </div>`;
+  card.querySelector('.btn-accept').onclick = () => {
+    item.accepted = true;
+    S.thread.push({ kind:'expert', text: p.message || '' });
+    renderThread();
+  };
+  card.querySelector('.btn-rewrite').onclick = () => {
+    setMode('coach');
+    $('reply-box').value = 'Rewrite the draft message to be ';
+    $('reply-box').focus();
+  };
+  return card;
+}
+
+/* ================= coach runs ================= */
+function showTyping(){
+  const t = $('thread');
+  const d = document.createElement('div');
+  d.className = 'typing'; d.id = 'typing';
+  d.innerHTML = '<i></i><i></i><i></i>';
+  t.appendChild(d); t.scrollTop = t.scrollHeight;
+}
+function hideTyping(){ const d = $('typing'); if (d) d.remove(); }
+
+async function runCoach(){
+  if (S.busy) return;
+  S.busy = true;
+  $('btn-send').disabled = $('btn-rerun').disabled = true;
+  $('rec-error').style.display = 'none';
+  showTyping();
+  try {
+    const r = await fetch('/api/recommend', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: $('model').value,
+        conversation_so_far: conversationSoFar(),
+        new_lead_message: latestCustomerMessage(),
+        issue_summary: issueSummaryText(),
+        prompt_template: S.promptOverride || undefined,
+      }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'Unknown server error');
+    hideTyping();
+    if (!data.parsed) {
+      showRailError('Model reply was not valid JSON. See raw output in the QA rail.');
+      $('r-raw').textContent = data.raw || '(empty)';
+      $('rec').style.display = 'block'; $('rec-empty').style.display = 'none';
+    } else {
+      S.lastRec = data.parsed;
+      S.coachHistory = [];   // new recommendation, fresh coach chat context
+      S.thread.push({ kind:'rec', rec: data.parsed, accepted:false });
+      renderThread();
+      renderRail(data);
+    }
+  } catch(e){
+    hideTyping();
+    showRailError(e.message);
+  } finally {
+    S.busy = false;
+    $('btn-send').disabled = $('btn-rerun').disabled = false;
+  }
+}
+
+async function askCoach(text){
+  if (S.busy) return;
+  S.busy = true;
+  $('btn-send').disabled = $('btn-rerun').disabled = true;
+  S.thread.push({ kind:'coach-user', text });
+  S.coachHistory.push({ role:'user', content: text });
+  renderThread();
+  showTyping();
+  try {
+    const r = await fetch('/api/agent-chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: $('model').value,
+        conversation_so_far: conversationSoFar(),
+        new_lead_message: latestCustomerMessage(),
+        issue_summary: issueSummaryText(),
+        prompt_template: S.promptOverride || undefined,
+        last_recommendation: S.lastRec,
+        history: S.coachHistory,
+      }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'Unknown server error');
+    hideTyping();
+    S.coachHistory.push({ role:'assistant', content: data.reply || '' });
+    if (data.parsed && data.parsed.action && data.parsed.message) {
+      // coach revised the recommendation
+      S.lastRec = data.parsed;
+      S.thread.push({ kind:'coach', text: 'Here is the revised recommendation:' });
+      S.thread.push({ kind:'rec', rec: data.parsed, accepted:false });
+      renderRail(data);
+    } else {
+      S.thread.push({ kind:'coach', text: data.reply || '(empty reply)' });
+    }
+    renderThread();
+  } catch(e){
+    hideTyping();
+    showRailError(e.message);
+  } finally {
+    S.busy = false;
+    $('btn-send').disabled = $('btn-rerun').disabled = false;
+  }
+}
+
+function showRailError(msg){
+  $('rec-error').style.display = 'block';
+  $('rec-error').textContent = '⚠ ' + msg;
+  $('rec-empty').style.display = 'none';
+}
+
+function limLine(el, len, max, strict){
+  const bad = strict ? len >= max : len > max;
+  el.innerHTML = `<span class="${bad?'bad':'ok'}">${bad?'✕':'✓'} ${len}/${max} chars${bad?' — over limit':''}</span>`;
+}
+
+function renderRail(data){
+  const p = data.parsed;
+  $('rec-empty').style.display = 'none';
+  $('rec-error').style.display = 'none';
+  $('rec').style.display = 'block';
+  $('r-reason').textContent = p.reason || '—';
+  $('r-issue').textContent = p.issue_label || '—';
+  limLine($('lim-reason'), (p.reason||'').length, 140, false);
+  limLine($('lim-issue'), (p.issue_label||'').length, 75, false);
+  limLine($('lim-message'), (p.message||'').length, 180, true);
+  $('r-raw').textContent = JSON.stringify(p, null, 2);
+  const u = data.usage || {};
+  $('r-meta').textContent = `${data.model} · ${((data.latency_ms||0)/1000).toFixed(1)}s · ${u.prompt_tokens ?? '–'} in / ${u.completion_tokens ?? '–'} out`;
+}
+
+/* ================= composer ================= */
+function setMode(mode){
+  S.mode = mode;
+  $('mode-customer').classList.toggle('on', mode==='customer');
+  $('mode-coach').classList.toggle('on', mode==='coach');
+  $('reply-box').placeholder = mode==='customer'
+    ? 'Reply as the customer… (Enter to send, Shift+Enter for newline)'
+    : 'Ask the wizard anything — "why this action?", "rewrite it warmer", "make it shorter"…';
+  $('mode-hint').textContent = mode==='customer'
+    ? 'Replies as the customer — the wizard re-runs after each message.'
+    : 'Talk to the wizard about its recommendation. Ask for rewrites or reasoning.';
+}
+$('mode-customer').onclick = () => setMode('customer');
+$('mode-coach').onclick = () => {
+  if (!S.lastRec) { alert('Run the wizard first — there is no recommendation to discuss yet.'); return; }
+  setMode('coach');
+};
+
+function sendMessage(){
+  const text = $('reply-box').value.trim();
+  if (!text || S.busy) return;
+  $('reply-box').value = '';
+  if (S.mode === 'coach') { askCoach(text); return; }
+  S.thread.push({ kind:'customer', text });
+  renderThread();
+  runCoach();
+}
+$('btn-send').onclick = sendMessage;
+$('reply-box').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+$('btn-rerun').onclick = () => { if (!S.busy) runCoach(); };
+
+/* ================= intake events ================= */
+$('tab-dataset').onclick = () => { $('tab-dataset').classList.add('on'); $('tab-manual').classList.remove('on'); $('pane-dataset').style.display=''; $('pane-manual').style.display='none'; };
+$('tab-manual').onclick = () => { $('tab-manual').classList.add('on'); $('tab-dataset').classList.remove('on'); $('pane-manual').style.display=''; $('pane-dataset').style.display='none'; };
+
+const dz = $('dropzone');
+dz.onclick = () => $('file-input').click();
+dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('drag'); };
+dz.ondragleave = () => dz.classList.remove('drag');
+dz.ondrop = (e) => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) f.text().then(loadDataset);
+};
+$('file-input').onchange = (e) => { const f = e.target.files[0]; if (f) f.text().then(loadDataset); };
+$('btn-parse').onclick = () => loadDataset($('paste-box').value);
+$('ds-search').oninput = (e) => renderDatasetList(e.target.value);
+$('btn-manual-load').onclick = loadManual;
+
+/* ================= prompt drawer ================= */
+function openDrawer(){ $('drawer').classList.add('open'); $('scrim').classList.add('open'); }
+function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classList.remove('open'); }
+$('btn-drawer').onclick = () => { $('prompt-editor').value = S.promptOverride || S.promptFile; openDrawer(); };
+$('btn-drawer-close').onclick = closeDrawer;
+$('scrim').onclick = closeDrawer;
+$('btn-prompt-save').onclick = () => {
+  const v = $('prompt-editor').value;
+  S.promptOverride = (v.trim() && v !== S.promptFile) ? v : '';
+  if (S.promptOverride) localStorage.setItem('cc_prompt_override', S.promptOverride);
+  else localStorage.removeItem('cc_prompt_override');
+  $('btn-drawer').textContent = S.promptOverride ? 'Edit prompt ●' : 'Edit prompt';
+  closeDrawer();
+};
+$('btn-prompt-reset').onclick = () => { $('prompt-editor').value = S.promptFile; };
+
+fetch('/api/prompt').then(r => r.json()).then(d => { S.promptFile = d.template || ''; });
+if (S.promptOverride) $('btn-drawer').textContent = 'Edit prompt ●';
+</script>
+</body>
+</html>

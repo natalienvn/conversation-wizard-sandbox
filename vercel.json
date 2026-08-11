@@ -1,0 +1,9 @@
+{
+  "outputDirectory": "public",
+  "functions": {
+    "api/*.js": {
+      "includeFiles": "prompt.txt",
+      "maxDuration": 60
+    }
+  }
+}

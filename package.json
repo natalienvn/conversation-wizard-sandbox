@@ -1,0 +1,16 @@
+{
+  "name": "conversation-wizard-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conversation Wizard Sandbox — conversational test UI for the care-coaching recommendation prompt",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0"
+  }
+}

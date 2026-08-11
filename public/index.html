@@ -60,6 +60,11 @@ header .spacer{flex:1}
 button.icon{padding:6px 9px;font-size:14px;line-height:1;border-radius:9px}
 button.icon.danger{color:var(--red)}
 button.icon.danger:hover{background:var(--red-wash);border-color:var(--red)}
+#warn-bar{display:none;flex:none;margin:8px 20px 0;padding:9px 12px;border:1.5px solid var(--amber);background:var(--amber-wash);color:var(--amber);border-radius:10px;font-size:12.5px;font-weight:600}
+#warn-bar.on{display:block}
+.dtabs{display:flex;gap:0;background:var(--bg);border-radius:999px;padding:4px;margin-bottom:10px;flex:none;align-self:flex-start}
+.dtabs button{border:none;background:transparent;border-radius:999px;padding:7px 18px;font-weight:600;font-size:13px;color:var(--text-soft)}
+.dtabs button.on{background:var(--card);color:var(--blue-deep);font-weight:700;box-shadow:var(--shadow)}
 .tag-local{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--plum);background:var(--plum-wash);padding:2px 7px;border-radius:999px}
 #proj-desc{font-size:12px;color:var(--text-faint);padding:6px 20px 0;flex:none;background:var(--card)}
 @media (max-width:1100px){ .proj-ctl select{max-width:150px} #proj-desc{display:none} }
@@ -271,6 +276,8 @@ details.raw pre{
       <button class="subtle icon" id="btn-proj-new" title="New project (saved in this browser only)">＋</button>
       <button class="subtle icon" id="btn-proj-dup" title="Duplicate this project as a local copy">⧉</button>
       <button class="subtle icon" id="btn-proj-export" title="Download this project as a .md file to commit to the repo">↓</button>
+      <button class="subtle icon" id="btn-proj-import" title="Import a .md project file into this browser">↑</button>
+      <input type="file" id="proj-file" hidden accept=".md,.txt">
       <button class="subtle icon danger" id="btn-proj-del" title="Delete this local project" style="display:none">🗑</button>
     </div>
     <span class="spacer"></span>
@@ -286,6 +293,7 @@ details.raw pre{
     <button class="subtle" id="btn-drawer">Edit prompt</button>
   </header>
   <div id="proj-desc"></div>
+  <div id="warn-bar"></div>
 
   <main>
     <!-- ===== LEFT : intake ===== -->
@@ -394,8 +402,13 @@ details.raw pre{
     <button class="subtle" id="btn-drawer-close">✕</button>
   </div>
   <div class="panel-body">
-    <div class="hint" style="margin-bottom:8px">Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b>, <b>{{issue_summary}}</b> are filled on every run. For a <b>shared</b> project the edit is saved in this browser only, so the repo version your colleagues use stays untouched. For a <b>local</b> project the edit becomes the project. Use the ↓ button in the header to export any project as a file you can commit.</div>
+    <div class="dtabs">
+      <button id="dtab-prompt" class="on">Prompt</button>
+      <button id="dtab-shape">Output shape</button>
+    </div>
+    <div class="hint" id="drawer-hint" style="margin-bottom:8px"></div>
     <textarea id="prompt-editor" spellcheck="false"></textarea>
+    <textarea id="schema-editor" spellcheck="false" style="display:none"></textarea>
   </div>
 </div>
 
@@ -442,10 +455,48 @@ function hasEdit(){
   const p = currentProject();
   return !!(p && localStorage.getItem(lsEditKey(p.id)));
 }
-function displayCfg(){ return (currentProject() || {}).display || {}; }
+const lsCfgKey = (id) => 'cwz_cfg_' + id;
+function cfgOverride(id){
+  try { return JSON.parse(localStorage.getItem(lsCfgKey(id)) || 'null'); } catch(_) { return null; }
+}
+// The output shape actually used: a local edit wins over the project's own config.
+function activeConfig(){
+  const p = currentProject();
+  if (!p) return { roles:null, schema:null, display:null };
+  const o = cfgOverride(p.id);
+  return {
+    roles:   o && 'roles'   in o ? o.roles   : p.roles,
+    schema:  o && 'schema'  in o ? o.schema  : p.schema,
+    display: o && 'display' in o ? o.display : p.display,
+  };
+}
+function displayCfg(){ return activeConfig().display || {}; }
 function roleLabels(){
-  const r = (currentProject() || {}).roles || {};
+  const r = activeConfig().roles || {};
   return { user: r.user || 'Customer', agent: r.agent || 'Expert' };
+}
+function hasCfgEdit(){ const p = currentProject(); return !!(p && cfgOverride(p.id)); }
+
+// The failure this catches: the prompt lists actions the schema does not allow.
+// Structured outputs constrain decoding, so the model physically cannot return
+// them and returns empty fields instead.
+function shapeWarning(){
+  const cfg = activeConfig();
+  const t = activeTemplate();
+  const props = (cfg.schema && cfg.schema.properties) || null;
+  if (!props || !t) return null;
+  const enumKey = Object.keys(props).find(k => Array.isArray(props[k].enum) && props[k].enum.length > 2);
+  if (!enumKey) return null;
+  const missing = props[enumKey].enum.filter(v => !t.includes(v));
+  if (!missing.length) return null;
+  const shown = missing.slice(0, 3).map(v => '"' + v + '"').join(', ');
+  return `Output shape mismatch: the schema restricts "${enumKey}" to values your prompt never mentions (${shown}${missing.length > 3 ? ', …' : ''}). The model can only return values the schema allows, so it will produce the wrong action and empty fields. Open Edit prompt → Output shape and update the schema to match your prompt.`;
+}
+function renderWarnBar(){
+  const w = shapeWarning();
+  const bar = $('warn-bar');
+  bar.textContent = w || '';
+  bar.classList.toggle('on', !!w);
 }
 
 async function initProjects(){
@@ -489,7 +540,8 @@ function renderProjectPicker(){
   const p = currentProject();
   $('btn-proj-del').style.display = (p && p.local) ? '' : 'none';
   $('proj-desc').textContent = p ? (p.description || '') : '';
-  $('btn-drawer').textContent = hasEdit() ? 'Edit prompt ●' : 'Edit prompt';
+  $('btn-drawer').textContent = (hasEdit() || hasCfgEdit()) ? 'Edit prompt ●' : 'Edit prompt';
+  renderWarnBar();
 }
 
 function switchProject(id){
@@ -564,12 +616,13 @@ function deleteLocalProject(){
 function exportProject(){
   const p = currentProject();
   if (!p) return;
+  const c = activeConfig();
   const header = {
     name: p.name,
     description: p.description || '',
-    ...(p.roles ? { roles: p.roles } : {}),
-    ...(p.schema ? { schema: p.schema } : {}),
-    ...(p.display ? { display: p.display } : {}),
+    ...(c.roles ? { roles: c.roles } : {}),
+    ...(c.schema ? { schema: c.schema } : {}),
+    ...(c.display ? { display: c.display } : {}),
   };
   const body = JSON.stringify(header, null, 2) + '\n---\n' + activeTemplate();
   const a = document.createElement('a');
@@ -1029,7 +1082,7 @@ async function runCoach(){
         new_lead_message: latestCustomerMessage(),
         issue_summary: issueSummaryText(),
         prompt_template: activeTemplate(),
-        schema: (currentProject() || {}).schema || null,
+        schema: activeConfig().schema || null,
       }),
     });
     const data = await r.json();
@@ -1073,7 +1126,7 @@ async function askCoach(text){
         new_lead_message: latestCustomerMessage(),
         issue_summary: issueSummaryText(),
         prompt_template: activeTemplate(),
-        schema: (currentProject() || {}).schema || null,
+        schema: activeConfig().schema || null,
         last_recommendation: S.lastRec,
         history: S.coachHistory,
       }),
@@ -1134,6 +1187,16 @@ function renderRail(data){
       ${max ? limHtml(String(v ?? '').length, max) : ''}
     </div>`;
   }).join('') || '<div class="rail-card">Model returned no fields.</div>';
+
+  // Empty required fields almost always mean the schema is fighting the prompt.
+  const empties = keys.filter(k => typeof p[k] === 'string' && !p[k].trim());
+  if (empties.length) {
+    $('r-cards').insertAdjacentHTML('afterbegin',
+      `<div class="rail-card" style="border-color:var(--amber);background:var(--amber-wash)">
+         <div class="rail-label" style="color:var(--amber)">Empty fields returned</div>
+         <div class="rail-val" style="color:var(--amber)">${esc(empties.join(', '))} came back blank. This usually means the output schema does not match what the prompt asks for. Open Edit prompt → Output shape.</div>
+       </div>`);
+  }
 
   $('r-raw').textContent = JSON.stringify(p, null, 2);
   const u = data.usage || {};
@@ -1198,38 +1261,113 @@ $('btn-manual-load').onclick = loadManual;
 /* ================= prompt drawer ================= */
 function openDrawer(){ $('drawer').classList.add('open'); $('scrim').classList.add('open'); }
 function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classList.remove('open'); }
+let drawerTab = 'prompt';
+function setDrawerTab(tab){
+  drawerTab = tab;
+  $('dtab-prompt').classList.toggle('on', tab === 'prompt');
+  $('dtab-shape').classList.toggle('on', tab === 'shape');
+  $('prompt-editor').style.display = tab === 'prompt' ? '' : 'none';
+  $('schema-editor').style.display = tab === 'shape' ? '' : 'none';
+  $('drawer-hint').innerHTML = tab === 'prompt'
+    ? 'Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b> and <b>{{issue_summary}}</b> are filled on every run.'
+    : 'The JSON shape the model must return. <b>schema</b> is enforced by the API, so any value not listed here cannot be produced — keep its action list in sync with your prompt. Set <b>"schema": null</b> to turn enforcement off and just parse whatever JSON the prompt asks for. <b>display</b> controls how the result is laid out; <b>limits</b> adds the character checks.';
+  $('btn-prompt-save').textContent = 'Save';
+}
+$('dtab-prompt').onclick = () => setDrawerTab('prompt');
+$('dtab-shape').onclick = () => setDrawerTab('shape');
+
 $('btn-drawer').onclick = () => {
   const p = currentProject();
-  $('drawer-title').textContent = p ? 'Prompt · ' + p.name : 'Prompt';
+  $('drawer-title').textContent = p ? 'Project · ' + p.name : 'Project';
   $('prompt-editor').value = activeTemplate();
+  const c = activeConfig();
+  $('schema-editor').value = JSON.stringify(
+    { roles: c.roles || null, schema: c.schema || null, display: c.display || null }, null, 2);
+  setDrawerTab(drawerTab);
   openDrawer();
 };
 $('btn-drawer-close').onclick = closeDrawer;
 $('scrim').onclick = closeDrawer;
+
 $('btn-prompt-save').onclick = () => {
   const p = currentProject();
   if (!p) return closeDrawer();
-  const v = $('prompt-editor').value;
+  const tmpl = $('prompt-editor').value;
+
+  let cfg;
+  try {
+    cfg = JSON.parse($('schema-editor').value || '{}');
+  } catch (e) {
+    setDrawerTab('shape');
+    alert('The Output shape tab is not valid JSON, so nothing was saved:\n\n' + e.message);
+    return;
+  }
+  const clean = { roles: cfg.roles ?? null, schema: cfg.schema ?? null, display: cfg.display ?? null };
+  const sameCfg = JSON.stringify(clean) ===
+    JSON.stringify({ roles: p.roles || null, schema: p.schema || null, display: p.display || null });
+
   if (p.local) {
-    // Your own project: the edit simply becomes the project.
-    p.template = v;
-    saveLocalProjects(loadLocalProjects().map(x => x.id === p.id ? { ...x, template: v } : x));
+    // Your own project: the edits simply become the project.
+    Object.assign(p, { template: tmpl }, clean);
+    saveLocalProjects(loadLocalProjects().map(x => x.id === p.id ? { ...x, template: tmpl, ...clean } : x));
     localStorage.removeItem(lsEditKey(p.id));
-  } else if (v.trim() && v !== p.template) {
-    // Shared project: keep the repo version intact, store the edit locally.
-    localStorage.setItem(lsEditKey(p.id), v);
+    localStorage.removeItem(lsCfgKey(p.id));
   } else {
-    localStorage.removeItem(lsEditKey(p.id));
+    // Shared project: keep the repo version intact, store edits locally.
+    if (tmpl.trim() && tmpl !== p.template) localStorage.setItem(lsEditKey(p.id), tmpl);
+    else localStorage.removeItem(lsEditKey(p.id));
+    if (!sameCfg) localStorage.setItem(lsCfgKey(p.id), JSON.stringify(clean));
+    else localStorage.removeItem(lsCfgKey(p.id));
   }
   renderProjectPicker();
+  setMode('customer');
   closeDrawer();
 };
+
 $('btn-prompt-reset').onclick = () => {
   const p = currentProject();
   if (!p) return;
   localStorage.removeItem(lsEditKey(p.id));
+  localStorage.removeItem(lsCfgKey(p.id));
   $('prompt-editor').value = p.template;
+  $('schema-editor').value = JSON.stringify(
+    { roles: p.roles || null, schema: p.schema || null, display: p.display || null }, null, 2);
   renderProjectPicker();
+};
+
+/* ---- import a .md project file (same format the ↓ button exports) ---- */
+function parseProjectText(id, raw){
+  let config = {}, template = raw;
+  const t = raw.replace(/^\ufeff/, '').trimStart();
+  if (t.startsWith('{')) {
+    const i = t.search(/\n-{3,}[ \t]*\n/);
+    if (i !== -1) {
+      try {
+        config = JSON.parse(t.slice(0, i));
+        template = t.slice(i).replace(/^\n-{3,}[ \t]*\n/, '');
+      } catch(_) { config = {}; template = raw; }
+    }
+  }
+  return { id, name: config.name || id, description: config.description || '',
+           roles: config.roles || null, schema: config.schema || null,
+           display: config.display || null, template: template.trim() + '\n', local: true };
+}
+$('btn-proj-import').onclick = () => $('proj-file').click();
+$('proj-file').onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then(txt => {
+    const base = f.name.replace(/\.(md|txt)$/i, '').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'imported';
+    let id = base, n = 2;
+    while (S.projects.some(x => x.id === id)) id = base + '-' + (n++);
+    const proj = parseProjectText(id, txt);
+    const locals = loadLocalProjects();
+    locals.push({ ...proj, local: undefined });
+    saveLocalProjects(locals);
+    S.projects.push(proj);
+    switchProject(id);
+  });
+  e.target.value = '';
 };
 
 initProjects();

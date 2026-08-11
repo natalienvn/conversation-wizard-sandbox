@@ -5,7 +5,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { loadPromptTemplate, recommend, agentChat } = require('./lib/coach');
+const { loadPromptTemplate, loadProjects, recommend, agentChat } = require('./lib/coach');
 
 const PORT = process.env.PORT || 4477;
 const ROOT = __dirname;
@@ -42,6 +42,10 @@ function send(res, status, body, type) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  if (req.method === 'GET' && url.pathname === '/api/projects') {
+    return send(res, 200, JSON.stringify({ projects: loadProjects() }));
+  }
 
   if (req.method === 'GET' && url.pathname === '/api/prompt') {
     return send(res, 200, JSON.stringify({ template: loadPromptTemplate() }));

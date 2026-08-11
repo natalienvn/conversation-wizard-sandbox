@@ -55,6 +55,14 @@ header{
 .logo .word small{font-weight:600;color:var(--text-faint);font-size:12px;display:block;margin-top:-3px;letter-spacing:0}
 header .spacer{flex:1}
 .hdr-ctl{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-soft);font-weight:600}
+.proj-ctl{margin-left:6px;padding-left:14px;border-left:1px solid var(--border);gap:4px}
+.proj-ctl select{max-width:230px;font-weight:700}
+button.icon{padding:6px 9px;font-size:14px;line-height:1;border-radius:9px}
+button.icon.danger{color:var(--red)}
+button.icon.danger:hover{background:var(--red-wash);border-color:var(--red)}
+.tag-local{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--plum);background:var(--plum-wash);padding:2px 7px;border-radius:999px}
+#proj-desc{font-size:12px;color:var(--text-faint);padding:6px 20px 0;flex:none;background:var(--card)}
+@media (max-width:1100px){ .proj-ctl select{max-width:150px} #proj-desc{display:none} }
 
 select,input[type=text],textarea{
   font-family:var(--sans);font-size:14px;color:var(--text);
@@ -224,8 +232,7 @@ main{display:flex;flex:1;min-height:0}
 #rec{display:none}
 .rail-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 15px;margin-bottom:12px}
 .rail-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-faint);margin-bottom:6px}
-#r-reason,#r-issue{font-size:13px}
-#r-issue{background:var(--blue-wash-2);border:1px dashed var(--border-strong);border-radius:10px;padding:8px 10px}
+.rail-val{font-size:13px;white-space:pre-wrap;word-break:break-word}
 .lim{font-family:var(--mono);font-size:10px;margin-top:6px}
 .lim .ok{color:var(--green)} .lim .bad{color:var(--red);font-weight:700}
 details.raw{margin:2px}
@@ -258,6 +265,14 @@ details.raw pre{
       <span class="bubble">conversation</span>
       <span class="word">wizard<small>sandbox</small></span>
     </div>
+    <div class="hdr-ctl proj-ctl">
+      Project
+      <select id="project" title="Each project is its own prompt"></select>
+      <button class="subtle icon" id="btn-proj-new" title="New project (saved in this browser only)">＋</button>
+      <button class="subtle icon" id="btn-proj-dup" title="Duplicate this project as a local copy">⧉</button>
+      <button class="subtle icon" id="btn-proj-export" title="Download this project as a .md file to commit to the repo">↓</button>
+      <button class="subtle icon danger" id="btn-proj-del" title="Delete this local project" style="display:none">🗑</button>
+    </div>
     <span class="spacer"></span>
     <div class="hdr-ctl">
       Model
@@ -270,6 +285,7 @@ details.raw pre{
     </div>
     <button class="subtle" id="btn-drawer">Edit prompt</button>
   </header>
+  <div id="proj-desc"></div>
 
   <main>
     <!-- ===== LEFT : intake ===== -->
@@ -359,20 +375,7 @@ details.raw pre{
         <div id="rec-empty"><span class="glyph">💡</span>Guardrail checks, character limits, and raw JSON for the wizard's latest recommendation will appear here.</div>
         <div id="rec-error"></div>
         <div id="rec">
-          <div class="rail-card">
-            <div class="rail-label">Reason · shown to the expert only</div>
-            <div id="r-reason"></div>
-            <div class="lim" id="lim-reason"></div>
-          </div>
-          <div class="rail-card">
-            <div class="rail-label">Issue label · context badge</div>
-            <div id="r-issue"></div>
-            <div class="lim" id="lim-issue"></div>
-          </div>
-          <div class="rail-card">
-            <div class="rail-label">Draft message length</div>
-            <div class="lim" id="lim-message"></div>
-          </div>
+          <div id="r-cards"></div>
           <details class="raw"><summary>Raw JSON output</summary><pre id="r-raw"></pre></details>
           <div id="r-meta"></div>
         </div>
@@ -384,14 +387,14 @@ details.raw pre{
 <!-- prompt drawer -->
 <div id="scrim"></div>
 <div id="drawer">
-  <div class="panel-head">Prompt template
+  <div class="panel-head"><span id="drawer-title">Prompt template</span>
     <span style="flex:1"></span>
     <button id="btn-prompt-reset">Reset to file</button>
     <button class="primary" id="btn-prompt-save">Use this prompt</button>
     <button class="subtle" id="btn-drawer-close">✕</button>
   </div>
   <div class="panel-body">
-    <div class="hint" style="margin-bottom:8px">Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b>, <b>{{issue_summary}}</b> are filled on every run. Edits apply to this browser only (saved locally); the file on disk is untouched.</div>
+    <div class="hint" style="margin-bottom:8px">Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b>, <b>{{issue_summary}}</b> are filled on every run. For a <b>shared</b> project the edit is saved in this browser only, so the repo version your colleagues use stays untouched. For a <b>local</b> project the edit becomes the project. Use the ↓ button in the header to export any project as a file you can commit.</div>
     <textarea id="prompt-editor" spellcheck="false"></textarea>
   </div>
 </div>
@@ -403,15 +406,184 @@ const S = {
   selected: -1,
   thread: [],            // visible items: {kind:'customer'|'expert'|'coach'|'coach-user'|'rec', ...}
   meta: { name:'', vertical:'', issue_summary:'' },
-  promptOverride: localStorage.getItem('cc_prompt_override') || '',
-  promptFile: '',
   busy: false,
   mode: 'customer',      // composer mode: 'customer' | 'coach'
   lastRec: null,         // latest parsed recommendation object
   coachHistory: [],      // chat with the agent: [{role:'user'|'assistant', content}]
+  projects: [],          // built-in (from prompts/) + local (from localStorage)
+  projectId: null,
 };
 const $ = (id) => document.getElementById(id);
 function esc(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+/* ================= projects =================
+   Built-in projects come from prompts/*.md in the repo and are shared with
+   everyone using the deployed site. Local projects live in this browser only
+   until you export them and commit the file. */
+const LS_LOCAL = 'cwz_local_projects';
+const LS_LAST  = 'cwz_last_project';
+const lsEditKey = (id) => 'cwz_prompt_edit_' + id;
+
+function loadLocalProjects(){
+  try { return JSON.parse(localStorage.getItem(LS_LOCAL) || '[]'); } catch(_) { return []; }
+}
+function saveLocalProjects(list){ localStorage.setItem(LS_LOCAL, JSON.stringify(list)); }
+
+function currentProject(){
+  return S.projects.find(p => p.id === S.projectId) || S.projects[0] || null;
+}
+// The prompt actually sent: an unsaved edit wins over the project's own text.
+function activeTemplate(){
+  const p = currentProject();
+  if (!p) return '';
+  return localStorage.getItem(lsEditKey(p.id)) || p.template || '';
+}
+function hasEdit(){
+  const p = currentProject();
+  return !!(p && localStorage.getItem(lsEditKey(p.id)));
+}
+function displayCfg(){ return (currentProject() || {}).display || {}; }
+function roleLabels(){
+  const r = (currentProject() || {}).roles || {};
+  return { user: r.user || 'Customer', agent: r.agent || 'Expert' };
+}
+
+async function initProjects(){
+  let builtIn = [];
+  try {
+    const r = await fetch('/api/projects');
+    const d = await r.json();
+    builtIn = (d.projects || []).map(p => ({ ...p, local: false }));
+  } catch(_) { /* offline or old deploy — fall back below */ }
+  if (!builtIn.length) {
+    try {
+      const d = await (await fetch('/api/prompt')).json();
+      if (d.template) builtIn = [{ id:'default', name:'Default prompt', description:'', template:d.template, schema:null, display:null, local:false }];
+    } catch(_) {}
+  }
+  S.projects = builtIn.concat(loadLocalProjects().map(p => ({ ...p, local: true })));
+  const wanted = localStorage.getItem(LS_LAST);
+  S.projectId = (wanted && S.projects.some(p => p.id === wanted)) ? wanted : (S.projects[0] && S.projects[0].id);
+  renderProjectPicker();
+  setMode('customer');
+}
+
+function renderProjectPicker(){
+  const sel = $('project');
+  sel.innerHTML = '';
+  const groups = [['Shared (in the repo)', false], ['This browser only', true]];
+  for (const [label, isLocal] of groups) {
+    const items = S.projects.filter(p => !!p.local === isLocal);
+    if (!items.length) continue;
+    const og = document.createElement('optgroup');
+    og.label = label;
+    for (const p of items) {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name + (localStorage.getItem(lsEditKey(p.id)) ? ' ●' : '');
+      if (p.id === S.projectId) o.selected = true;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+  const p = currentProject();
+  $('btn-proj-del').style.display = (p && p.local) ? '' : 'none';
+  $('proj-desc').textContent = p ? (p.description || '') : '';
+  $('btn-drawer').textContent = hasEdit() ? 'Edit prompt ●' : 'Edit prompt';
+}
+
+function switchProject(id){
+  S.projectId = id;
+  localStorage.setItem(LS_LAST, id);
+  renderProjectPicker();
+  setMode('customer');
+  // A different prompt means a different output shape — start the thread clean.
+  S.thread = []; S.lastRec = null; S.coachHistory = [];
+  $('thread').innerHTML = '<div id="empty-state"><span class="big">Load a conversation, then <em>talk it through with the wizard.</em></span><p>Pick a conversation from a dataset, or use manual intake. The wizard reads the thread and drops its recommendation right into the chat.</p></div>';
+  $('thread-meta').style.display = 'none';
+  $('composer').style.display = 'none';
+  $('rec').style.display = 'none';
+  $('rec-error').style.display = 'none';
+  $('rec-empty').style.display = 'block';
+}
+
+const STARTER_PROMPT = `You are an assistant that reviews a conversation and recommends what to do next.
+
+** WHAT YOU RECEIVE **
+The conversation so far: {{conversation_so_far}}
+The latest message: {{new_lead_message}}
+Background context: {{issue_summary}}
+
+** YOUR TASK **
+Describe what you want the model to decide here.
+
+** OUTPUT FORMAT **
+Return only this JSON object, with no text outside it.
+{
+"action": "<what to do next>",
+"reason": "<why, citing a specific detail>",
+"message": "<a short draft the operator can edit and send>",
+"confidence": "high" or "low"
+}
+`;
+
+function newLocalProject(seed){
+  const name = prompt('Name for the new project:', seed ? seed.name + ' (copy)' : 'My new project');
+  if (!name) return;
+  const base = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project');
+  let id = base, n = 2;
+  while (S.projects.some(p => p.id === id)) id = base + '-' + (n++);
+  const proj = {
+    id, name,
+    description: seed ? seed.description : '',
+    template: seed ? (localStorage.getItem(lsEditKey(seed.id)) || seed.template) : STARTER_PROMPT,
+    schema: seed ? seed.schema : null,
+    display: seed ? seed.display : null,
+    roles: seed ? seed.roles : null,
+    local: true,
+  };
+  const locals = loadLocalProjects();
+  locals.push({ ...proj, local: undefined });
+  saveLocalProjects(locals);
+  S.projects.push(proj);
+  switchProject(id);
+  if (!seed) { $('prompt-editor').value = proj.template; openDrawer(); }
+}
+
+function deleteLocalProject(){
+  const p = currentProject();
+  if (!p || !p.local) return;
+  if (!confirm(`Delete the local project "${p.name}"? This cannot be undone.\n\nExport it first if you want to keep it.`)) return;
+  saveLocalProjects(loadLocalProjects().filter(x => x.id !== p.id));
+  localStorage.removeItem(lsEditKey(p.id));
+  S.projects = S.projects.filter(x => x.id !== p.id);
+  switchProject(S.projects[0] ? S.projects[0].id : null);
+}
+
+// Download in the exact prompts/<id>.md format so it can be committed as-is.
+function exportProject(){
+  const p = currentProject();
+  if (!p) return;
+  const header = {
+    name: p.name,
+    description: p.description || '',
+    ...(p.roles ? { roles: p.roles } : {}),
+    ...(p.schema ? { schema: p.schema } : {}),
+    ...(p.display ? { display: p.display } : {}),
+  };
+  const body = JSON.stringify(header, null, 2) + '\n---\n' + activeTemplate();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([body], { type: 'text/markdown' }));
+  a.download = p.id + '.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('project').onchange = (e) => switchProject(e.target.value);
+$('btn-proj-new').onclick = () => newLocalProject(null);
+$('btn-proj-dup').onclick = () => newLocalProject(currentProject());
+$('btn-proj-export').onclick = exportProject;
+$('btn-proj-del').onclick = deleteLocalProject;
 
 /* ================= parsing — accepts any format ================= */
 const CUST_RE = /^(customer|user|lead|patient|client|caller|visitor|guest|member|human|inbound|me|q|question)$/i;
@@ -691,7 +863,8 @@ function resetSession(){
 function conversationSoFar(){
   const msgs = S.thread.filter(m => m.kind === 'customer' || m.kind === 'expert');
   if (!msgs.length) return '(no prior messages — this is the start of the conversation)';
-  return msgs.map(m => (m.kind === 'expert' ? 'Expert: ' : 'Customer: ') + m.text).join('\n');
+  const rl = roleLabels();
+  return msgs.map(m => (m.kind === 'expert' ? rl.agent + ': ' : rl.user + ': ') + m.text).join('\n');
 }
 function latestCustomerMessage(){
   for (let i = S.thread.length-1; i >= 0; i--) if (S.thread[i].kind === 'customer') return S.thread[i].text;
@@ -732,11 +905,12 @@ function renderThread(){
     if (item.kind === 'rec') { t.appendChild(recCard(item, idx)); return; }
     const div = document.createElement('div');
     div.className = 'msg ' + item.kind;
-    const tag = { customer:'Customer', expert:'Expert', coach:'✨ Wizard', 'coach-user':'You → Wizard' }[item.kind] || item.kind;
+    const rl = roleLabels();
+    const tag = { customer:rl.user, expert:rl.agent, coach:'✨ Wizard', 'coach-user':'You → Wizard' }[item.kind] || item.kind;
     div.innerHTML = `<span class="tag">${tag}</span>${esc(item.text)}`;
     if (item.kind === 'customer' || item.kind === 'expert') {
       div.style.cursor = 'pointer';
-      div.title = 'Wrong speaker? Click to switch between Customer and Expert';
+      div.title = `Wrong speaker? Click to switch between ${rl.user} and ${rl.agent}`;
       div.onclick = () => { item.kind = item.kind === 'customer' ? 'expert' : 'customer'; renderThread(); };
     }
     t.appendChild(div);
@@ -744,34 +918,81 @@ function renderThread(){
   t.scrollTop = t.scrollHeight;
 }
 
+// Pick a field by config, else by name pattern, so a brand-new project with a
+// different output shape still renders something sensible.
+function pickField(obj, configured, patterns){
+  if (configured && configured in obj) return configured;
+  for (const re of patterns) {
+    const hit = Object.keys(obj).find(k => re.test(k));
+    if (hit) return hit;
+  }
+  return null;
+}
+function fieldMap(p){
+  const d = displayCfg();
+  const headline = pickField(p, d.headline, [/^action$/i, /^recommendation$/i, /^decision$/i, /^next_?step$/i, /^category$/i, /^intent$/i, /^label$/i]);
+  const message  = pickField(p, d.message,  [/^message$/i, /^draft/i, /^reply$/i, /^response$/i, /^suggested_?(text|reply)$/i]);
+  const reason   = pickField(p, d.reason,   [/^reason/i, /^rationale$/i, /^why$/i, /^explanation$/i, /^justification$/i]);
+  return { headline, message, reason };
+}
+
 function recCard(item, idx){
-  const p = item.rec;
+  const p = item.rec || {};
+  const d = displayCfg();
+  const f = fieldMap(p);
+  const roles = roleLabels();
   const card = document.createElement('div');
   const isLatest = idx === S.thread.map(x=>x.kind).lastIndexOf('rec');
   card.className = 'rec-inline' + (item.accepted ? ' accepted' : (!isLatest ? ' stale' : ''));
-  const cls = (ACTION_CLASS.find(([re]) => re.test(p.action||'')) || [null,'a-other'])[1];
-  const conf = String(p.confidence||'').toLowerCase();
-  const paid = PAID.test(p.action||'');
+
+  const headlineVal = f.headline ? String(p[f.headline] ?? '') : '';
+  const cls = (ACTION_CLASS.find(([re]) => re.test(headlineVal)) || [null,'a-other'])[1];
+
+  // Badges: explicitly configured, else every leftover short scalar field.
+  const shown = new Set([f.headline, f.message, f.reason].filter(Boolean));
+  const badgeKeys = (d.badges && d.badges.length)
+    ? d.badges.filter(k => k in p)
+    : Object.keys(p).filter(k => !shown.has(k) && ['string','number','boolean'].includes(typeof p[k]) && String(p[k]).length <= 60);
+  badgeKeys.forEach(k => shown.add(k));
+  const badges = badgeKeys.map(k => {
+    const v = p[k];
+    if (v === null || v === undefined || v === '' || v === 'null') return '';
+    const lv = String(v).toLowerCase();
+    const tone = lv === 'high' ? 'hi' : lv === 'low' ? 'lo' : /\$|price|fee/i.test(k + lv) ? 'price' : '';
+    const label = /^(confidence|price|suggested_price)$/i.test(k) ? `${k.replace(/_/g,' ')}: ${v}` : String(v);
+    return `<span class="pill ${tone}">${esc(label)}</span>`;
+  }).join('');
+  const paidPill = f.headline && PAID.test(headlineVal)
+    ? '<span class="pill paid">paid add-on</span>' : '';
+
+  // Anything left over (configured extras or long fields) renders as rows.
+  const extraKeys = (d.fields && d.fields.length)
+    ? d.fields.filter(k => k in p)
+    : Object.keys(p).filter(k => !shown.has(k));
+  const extras = extraKeys.map(k => {
+    const v = p[k];
+    const txt = (v && typeof v === 'object') ? JSON.stringify(v) : String(v ?? '');
+    return `<div class="why"><b>${esc(k.replace(/_/g,' '))}:</b> ${esc(txt)}</div>`;
+  }).join('');
+
   card.innerHTML = `
     <div class="rec-top"><span class="spark">✨</span> Wizard recommendation</div>
     <div class="rec-main">
-      <span class="action-chip ${cls}">${esc(p.action || '—')}</span>
-      <div class="pills">
-        <span class="pill ${conf==='high'?'hi':'lo'}">confidence: ${esc(conf||'?')}</span>
-        <span class="pill ${paid?'paid':''}">${paid?'paid add-on':'non-paid'}</span>
-        ${p.suggested_price && p.suggested_price!=='null' ? `<span class="pill price">${esc(String(p.suggested_price))}</span>` : ''}
-      </div>
-      <div class="why"><b>Why:</b> ${esc(p.reason || '—')}</div>
-      <div class="draft"><span class="dtag">Draft message to customer</span>${esc(p.message || '(empty message — prompt violation!)')}</div>
+      ${f.headline ? `<span class="action-chip ${cls}">${esc(headlineVal || '—')}</span>` : ''}
+      ${(badges || paidPill) ? `<div class="pills">${badges}${paidPill}</div>` : ''}
+      ${f.reason ? `<div class="why"><b>Why:</b> ${esc(String(p[f.reason] ?? '—'))}</div>` : ''}
+      ${extras}
+      ${f.message ? `<div class="draft"><span class="dtag">Draft message to ${esc(roles.user.toLowerCase())}</span>${esc(String(p[f.message] || '') || '(empty — the prompt requires this field)')}</div>` : ''}
       <div class="btns">
-        <button class="primary btn-accept">✓ Accept &amp; send as expert</button>
+        ${f.message ? `<button class="primary btn-accept">✓ Accept &amp; send as ${esc(roles.agent.toLowerCase())}</button>` : ''}
         <button class="btn-rewrite">✎ Ask wizard to rewrite</button>
       </div>
-      <div class="accepted-note">✓ Accepted — sent as the expert's reply</div>
+      <div class="accepted-note">✓ Accepted — sent as the ${esc(roles.agent.toLowerCase())}'s reply</div>
     </div>`;
-  card.querySelector('.btn-accept').onclick = () => {
+  const acceptBtn = card.querySelector('.btn-accept');
+  if (acceptBtn) acceptBtn.onclick = () => {
     item.accepted = true;
-    S.thread.push({ kind:'expert', text: p.message || '' });
+    S.thread.push({ kind:'expert', text: String(p[f.message] || '') });
     renderThread();
   };
   card.querySelector('.btn-rewrite').onclick = () => {
@@ -803,10 +1024,12 @@ async function runCoach(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         model: $('model').value,
+        project_id: S.projectId,
         conversation_so_far: conversationSoFar(),
         new_lead_message: latestCustomerMessage(),
         issue_summary: issueSummaryText(),
-        prompt_template: S.promptOverride || undefined,
+        prompt_template: activeTemplate(),
+        schema: (currentProject() || {}).schema || null,
       }),
     });
     const data = await r.json();
@@ -845,10 +1068,12 @@ async function askCoach(text){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         model: $('model').value,
+        project_id: S.projectId,
         conversation_so_far: conversationSoFar(),
         new_lead_message: latestCustomerMessage(),
         issue_summary: issueSummaryText(),
-        prompt_template: S.promptOverride || undefined,
+        prompt_template: activeTemplate(),
+        schema: (currentProject() || {}).schema || null,
         last_recommendation: S.lastRec,
         history: S.coachHistory,
       }),
@@ -882,36 +1107,53 @@ function showRailError(msg){
   $('rec-empty').style.display = 'none';
 }
 
-function limLine(el, len, max, strict){
-  const bad = strict ? len >= max : len > max;
-  el.innerHTML = `<span class="${bad?'bad':'ok'}">${bad?'✕':'✓'} ${len}/${max} chars${bad?' — over limit':''}</span>`;
+function limHtml(len, max){
+  const bad = len > max;
+  return `<div class="lim"><span class="${bad?'bad':'ok'}">${bad?'\u2715':'\u2713'} ${len}/${max} chars${bad?' \u2014 over limit':''}</span></div>`;
 }
 
+// The rail is built from whatever the project returned: one card per field,
+// with a character-limit check for any field listed in display.limits.
 function renderRail(data){
-  const p = data.parsed;
+  const p = data.parsed || {};
+  const limits = displayCfg().limits || {};
   $('rec-empty').style.display = 'none';
   $('rec-error').style.display = 'none';
   $('rec').style.display = 'block';
-  $('r-reason').textContent = p.reason || '—';
-  $('r-issue').textContent = p.issue_label || '—';
-  limLine($('lim-reason'), (p.reason||'').length, 140, false);
-  limLine($('lim-issue'), (p.issue_label||'').length, 75, false);
-  limLine($('lim-message'), (p.message||'').length, 180, true);
+
+  const keys = Object.keys(p);
+  // Fields with a declared limit sort first \u2014 those are the ones worth QA-ing.
+  keys.sort((a, b) => (limits[b] ? 1 : 0) - (limits[a] ? 1 : 0));
+  $('r-cards').innerHTML = keys.map(k => {
+    const v = p[k];
+    const txt = (v && typeof v === 'object') ? JSON.stringify(v, null, 2) : String(v ?? '\u2014');
+    const max = limits[k];
+    return `<div class="rail-card">
+      <div class="rail-label">${esc(k.replace(/_/g,' '))}${max ? ' \u00b7 limit ' + max : ''}</div>
+      <div class="rail-val">${esc(txt)}</div>
+      ${max ? limHtml(String(v ?? '').length, max) : ''}
+    </div>`;
+  }).join('') || '<div class="rail-card">Model returned no fields.</div>';
+
   $('r-raw').textContent = JSON.stringify(p, null, 2);
   const u = data.usage || {};
-  $('r-meta').textContent = `${data.model} · ${((data.latency_ms||0)/1000).toFixed(1)}s · ${u.prompt_tokens ?? '–'} in / ${u.completion_tokens ?? '–'} out`;
+  $('r-meta').textContent = `${data.model} \u00b7 ${((data.latency_ms||0)/1000).toFixed(1)}s \u00b7 ${u.prompt_tokens ?? '\u2013'} in / ${u.completion_tokens ?? '\u2013'} out`;
 }
+
 
 /* ================= composer ================= */
 function setMode(mode){
+  const rl = roleLabels();
+  const who = rl.user.toLowerCase();
   S.mode = mode;
   $('mode-customer').classList.toggle('on', mode==='customer');
   $('mode-coach').classList.toggle('on', mode==='coach');
+  $('mode-customer').textContent = `💬 As ${who}`;
   $('reply-box').placeholder = mode==='customer'
-    ? 'Reply as the customer… (Enter to send, Shift+Enter for newline)'
+    ? `Reply as the ${who}… (Enter to send, Shift+Enter for newline)`
     : 'Ask the wizard anything — "why this action?", "rewrite it warmer", "make it shorter"…';
   $('mode-hint').textContent = mode==='customer'
-    ? 'Replies as the customer — the wizard re-runs after each message.'
+    ? `Replies as the ${who} — the wizard re-runs after each message.`
     : 'Talk to the wizard about its recommendation. Ask for rewrites or reasoning.';
 }
 $('mode-customer').onclick = () => setMode('customer');
@@ -956,21 +1198,42 @@ $('btn-manual-load').onclick = loadManual;
 /* ================= prompt drawer ================= */
 function openDrawer(){ $('drawer').classList.add('open'); $('scrim').classList.add('open'); }
 function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classList.remove('open'); }
-$('btn-drawer').onclick = () => { $('prompt-editor').value = S.promptOverride || S.promptFile; openDrawer(); };
+$('btn-drawer').onclick = () => {
+  const p = currentProject();
+  $('drawer-title').textContent = p ? 'Prompt · ' + p.name : 'Prompt';
+  $('prompt-editor').value = activeTemplate();
+  openDrawer();
+};
 $('btn-drawer-close').onclick = closeDrawer;
 $('scrim').onclick = closeDrawer;
 $('btn-prompt-save').onclick = () => {
+  const p = currentProject();
+  if (!p) return closeDrawer();
   const v = $('prompt-editor').value;
-  S.promptOverride = (v.trim() && v !== S.promptFile) ? v : '';
-  if (S.promptOverride) localStorage.setItem('cc_prompt_override', S.promptOverride);
-  else localStorage.removeItem('cc_prompt_override');
-  $('btn-drawer').textContent = S.promptOverride ? 'Edit prompt ●' : 'Edit prompt';
+  if (p.local) {
+    // Your own project: the edit simply becomes the project.
+    p.template = v;
+    saveLocalProjects(loadLocalProjects().map(x => x.id === p.id ? { ...x, template: v } : x));
+    localStorage.removeItem(lsEditKey(p.id));
+  } else if (v.trim() && v !== p.template) {
+    // Shared project: keep the repo version intact, store the edit locally.
+    localStorage.setItem(lsEditKey(p.id), v);
+  } else {
+    localStorage.removeItem(lsEditKey(p.id));
+  }
+  renderProjectPicker();
   closeDrawer();
 };
-$('btn-prompt-reset').onclick = () => { $('prompt-editor').value = S.promptFile; };
+$('btn-prompt-reset').onclick = () => {
+  const p = currentProject();
+  if (!p) return;
+  localStorage.removeItem(lsEditKey(p.id));
+  $('prompt-editor').value = p.template;
+  renderProjectPicker();
+};
 
-fetch('/api/prompt').then(r => r.json()).then(d => { S.promptFile = d.template || ''; });
-if (S.promptOverride) $('btn-drawer').textContent = 'Edit prompt ●';
+initProjects();
+
 </script>
 </body>
 </html>

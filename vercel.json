@@ -2,7 +2,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/*.js": {
-      "includeFiles": "prompt.txt",
+      "includeFiles": "prompts/**",
       "maxDuration": 60
     }
   }

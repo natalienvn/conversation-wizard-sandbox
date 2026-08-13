@@ -483,6 +483,25 @@ function sectionLimit(text, key){
   const l = /(?:hard limit\s*:?\s*|under\s+|max(?:imum)?\s+(?:of\s+)?)(\d{2,4})\s*characters?|(\d{2,4})\s*characters?\s*max/i.exec(m[1]);
   return l ? +(l[1] || l[2]) : null;
 }
+// Split "a": 1, "b": 2 on the commas that separate fields, ignoring commas
+// inside quoted descriptors like "<one of: A, B, C>". Works whether the block
+// is written across many lines or squashed onto one.
+function splitTopLevel(inner){
+  const parts = []; let depth = 0, inStr = false, esc = false, cur = '';
+  for (const ch of inner) {
+    if (esc) { cur += ch; esc = false; continue; }
+    if (ch === '\\') { cur += ch; esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; cur += ch; continue; }
+    if (!inStr) {
+      if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') depth--;
+      else if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    }
+    cur += ch;
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts;
+}
 const _shapeCache = new Map();
 function deriveShape(text){
   if (!text) return null;
@@ -491,9 +510,9 @@ function deriveShape(text){
   const inner = findJsonBlock(text);
   if (inner) {
     const props = {}, required = [], limits = {};
-    const lineRe = /"([A-Za-z_][\w.\-]*)"\s*:\s*([^\n]+)/g;
-    let mm;
-    while ((mm = lineRe.exec(inner))) {
+    for (const part of splitTopLevel(inner)) {
+      const mm = /^\s*"([A-Za-z_][\w.\-]*)"\s*:\s*([\s\S]+)$/.exec(part);
+      if (!mm) continue;
       const key = mm[1];
       const val = mm[2].trim().replace(/,\s*$/, '');
       const nullable = /\bor\s+null\b/i.test(val);
@@ -592,6 +611,15 @@ function hasCfgEdit(){ const p = currentProject(); return !!(p && cfgOverride(p.
 // The failure this catches: the prompt lists actions the schema does not allow.
 // Structured outputs constrain decoding, so the model physically cannot return
 // them and returns empty fields instead.
+function onelineWarning(){
+  const t = activeTemplate();
+  const inner = findJsonBlock(t);
+  if (!inner || inner.includes('\n')) return null;
+  if (splitTopLevel(inner).length < 2) return null;
+  return 'Your OUTPUT FORMAT block is written on a single line. Models tend to echo the '
+    + '<placeholder> descriptors back instead of filling them in, which shows up as "placeholder" '
+    + 'in every field. Put one field per line inside the { } and it goes away.';
+}
 function shapeWarning(){
   const cfg = activeConfig();
   if (cfg.auto) return null;
@@ -628,7 +656,7 @@ function renderOriginBar(){
 }
 
 function renderWarnBar(){
-  const w = shapeWarning();
+  const w = onelineWarning() || shapeWarning();
   const bar = $('warn-bar');
   bar.textContent = w || '';
   bar.classList.toggle('on', !!w);

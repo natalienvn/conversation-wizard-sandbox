@@ -62,6 +62,10 @@ button.icon.danger{color:var(--red)}
 button.icon.danger:hover{background:var(--red-wash);border-color:var(--red)}
 #warn-bar{display:none;flex:none;margin:8px 20px 0;padding:9px 12px;border:1.5px solid var(--amber);background:var(--amber-wash);color:var(--amber);border-radius:10px;font-size:12.5px;font-weight:600}
 #warn-bar.on{display:block}
+#origin-bar{display:none;flex:none;margin:8px 20px 0;padding:9px 12px;border:1.5px solid var(--sky);background:var(--blue-wash);color:var(--blue-deep);border-radius:10px;font-size:12.5px;font-weight:600}
+#origin-bar.on{display:block}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:all .22s ease;z-index:60}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .dtabs{display:flex;gap:0;background:var(--bg);border-radius:999px;padding:4px;margin-bottom:10px;flex:none;align-self:flex-start}
 .dtabs button{border:none;background:transparent;border-radius:999px;padding:7px 18px;font-weight:600;font-size:13px;color:var(--text-soft)}
 .dtabs button.on{background:var(--card);color:var(--blue-deep);font-weight:700;box-shadow:var(--shadow)}
@@ -294,6 +298,7 @@ details.raw pre{
   </header>
   <div id="proj-desc"></div>
   <div id="warn-bar"></div>
+  <div id="origin-bar"></div>
 
   <main>
     <!-- ===== LEFT : intake ===== -->
@@ -397,7 +402,7 @@ details.raw pre{
 <div id="drawer">
   <div class="panel-head"><span id="drawer-title">Prompt template</span>
     <span style="flex:1"></span>
-    <button id="btn-prompt-reset">Reset to file</button>
+    <button id="btn-prompt-reset" title="Throw away your edits and go back to the version in the repo">↺ Discard my edits</button>
     <button class="primary" id="btn-prompt-save">Use this prompt</button>
     <button class="subtle" id="btn-drawer-close">✕</button>
   </div>
@@ -492,6 +497,28 @@ function shapeWarning(){
   const shown = missing.slice(0, 3).map(v => '"' + v + '"').join(', ');
   return `Output shape mismatch: the schema restricts "${enumKey}" to values your prompt never mentions (${shown}${missing.length > 3 ? ', …' : ''}). The model can only return values the schema allows, so it will produce the wrong action and empty fields. Open Edit prompt → Output shape and update the schema to match your prompt.`;
 }
+function toast(msg){
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.className = 'on';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.className = ''; }, 2600);
+}
+
+// Saved prompts live in this browser, keyed to the exact address in the URL bar.
+// localhost and each Vercel URL are separate stores, which is the usual reason
+// edits look like they "disappeared".
+const CANONICAL_HOST = 'conversation-wizard-sandbox.vercel.app';
+function renderOriginBar(){
+  const bar = $('origin-bar');
+  const h = location.hostname;
+  if (h === CANONICAL_HOST) { bar.className = ''; bar.innerHTML = ''; return; }
+  const where = (h === 'localhost' || h === '127.0.0.1') ? 'your local dev server' : 'a preview URL';
+  bar.innerHTML = `You are on <b>${esc(h)}</b> (${where}). Prompts you save here are stored for this address only — they will not appear on <a href="https://${CANONICAL_HOST}" style="color:inherit">${CANONICAL_HOST}</a>, which keeps its own separate copy.`;
+  bar.className = 'on';
+}
+
 function renderWarnBar(){
   const w = shapeWarning();
   const bar = $('warn-bar');
@@ -542,6 +569,7 @@ function renderProjectPicker(){
   $('proj-desc').textContent = p ? (p.description || '') : '';
   $('btn-drawer').textContent = (hasEdit() || hasCfgEdit()) ? 'Edit prompt ●' : 'Edit prompt';
   renderWarnBar();
+  renderOriginBar();
 }
 
 function switchProject(id){
@@ -1286,8 +1314,23 @@ $('btn-drawer').onclick = () => {
   setDrawerTab(drawerTab);
   openDrawer();
 };
-$('btn-drawer-close').onclick = closeDrawer;
-$('scrim').onclick = closeDrawer;
+// Closing used to silently discard whatever was typed.
+function drawerDirty(){
+  const p = currentProject();
+  if (!p || !$('drawer').classList.contains('open')) return false;
+  const c = activeConfig();
+  const savedCfg = JSON.stringify({ roles:c.roles||null, schema:c.schema||null, display:c.display||null }, null, 2);
+  return $('prompt-editor').value !== activeTemplate() || $('schema-editor').value !== savedCfg;
+}
+function closeDrawerSafely(){
+  if (drawerDirty() && !confirm('You have unsaved changes to this prompt.\n\nClose without saving?')) return;
+  closeDrawer();
+}
+$('btn-drawer-close').onclick = closeDrawerSafely;
+$('scrim').onclick = closeDrawerSafely;
+window.addEventListener('beforeunload', (e) => {
+  if (drawerDirty()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 $('btn-prompt-save').onclick = () => {
   const p = currentProject();
@@ -1322,11 +1365,14 @@ $('btn-prompt-save').onclick = () => {
   renderProjectPicker();
   setMode('customer');
   closeDrawer();
+  toast('Saved to this browser · ' + location.hostname);
 };
 
 $('btn-prompt-reset').onclick = () => {
   const p = currentProject();
   if (!p) return;
+  const what = p.local ? 'this project' : 'the version in the repo';
+  if (!confirm(`Throw away your edits and go back to ${what}?\n\nThis cannot be undone.`)) return;
   localStorage.removeItem(lsEditKey(p.id));
   localStorage.removeItem(lsCfgKey(p.id));
   $('prompt-editor').value = p.template;

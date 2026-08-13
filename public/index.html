@@ -460,20 +460,127 @@ function hasEdit(){
   const p = currentProject();
   return !!(p && localStorage.getItem(lsEditKey(p.id)));
 }
+/* ---- derive the output shape from the prompt's OUTPUT FORMAT block ----
+   So editing the prompt's JSON block is enough; the schema follows it. */
+function findJsonBlock(text){
+  const m = /OUTPUT\s*FORMAT/i.exec(text);
+  let start = text.indexOf('{', m ? m.index : 0);
+  if (start === -1) start = text.lastIndexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < text.length; i++){
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') { depth--; if (depth === 0) return text.slice(start + 1, i); }
+  }
+  return null;
+}
+// "Hard limit: 140 characters" / "under 180 characters" stated in a
+// "WRITING THE <FIELD>" section rather than inline in the JSON block.
+function sectionLimit(text, key){
+  const re = new RegExp('WRITING THE ' + key.replace(/_/g, '[ _]') + '([\\s\\S]{0,900})', 'i');
+  const m = re.exec(text);
+  if (!m) return null;
+  const l = /(?:hard limit\s*:?\s*|under\s+|max(?:imum)?\s+(?:of\s+)?)(\d{2,4})\s*characters?|(\d{2,4})\s*characters?\s*max/i.exec(m[1]);
+  return l ? +(l[1] || l[2]) : null;
+}
+const _shapeCache = new Map();
+function deriveShape(text){
+  if (!text) return null;
+  if (_shapeCache.has(text)) return _shapeCache.get(text);
+  let out = null;
+  const inner = findJsonBlock(text);
+  if (inner) {
+    const props = {}, required = [], limits = {};
+    const lineRe = /"([A-Za-z_][\w.\-]*)"\s*:\s*([^\n]+)/g;
+    let mm;
+    while ((mm = lineRe.exec(inner))) {
+      const key = mm[1];
+      const val = mm[2].trim().replace(/,\s*$/, '');
+      const nullable = /\bor\s+null\b/i.test(val);
+      let def = null;
+      const oneOf = /<\s*one of\s*:\s*([^>]+)>/i.exec(val);
+      if (oneOf) {
+        const vals = oneOf[1].split(',').map(v => v.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+        if (vals.length) def = { type: 'string', enum: vals };
+      } else {
+        // e.g.  "high" or "low"
+        const lits = [...val.matchAll(/"([^"<>]{1,60})"/g)].map(x => x[1]);
+        if (lits.length >= 2 && /\bor\b/i.test(val)) def = { type: 'string', enum: lits };
+      }
+      if (!def) def = { type: 'string' };
+      const inline = /(\d{2,4})\s*characters?\s*max|max(?:imum)?\s*(?:of\s*)?(\d{2,4})\s*characters?|under\s*(\d{2,4})\s*characters?/i.exec(val);
+      const lim = inline ? +(inline[1] || inline[2] || inline[3]) : sectionLimit(text, key);
+      if (lim) limits[key] = lim;
+      props[key] = nullable ? { anyOf: [def, { type: 'null' }] } : def;
+      required.push(key);
+    }
+    if (required.length) {
+      out = {
+        schema: { type: 'object', properties: props, required, additionalProperties: false },
+        limits,
+      };
+    }
+  }
+  _shapeCache.set(text, out);
+  return out;
+}
+function declaredShape(p){
+  const o = cfgOverride(p.id) || {};
+  return {
+    roles:   ('roles'   in o ? o.roles   : p.roles)   || null,
+    schema:  ('schema'  in o ? o.schema  : (p.schema == null ? 'auto' : p.schema)),
+    display: ('display' in o ? o.display : p.display) || null,
+  };
+}
+function shapeSummary(){
+  const d = deriveShape(activeTemplate());
+  if (!d) return 'No JSON block found in the prompt, so nothing is enforced. The app will parse whatever JSON comes back.';
+  return Object.keys(d.schema.properties).map(k => {
+    const p = d.schema.properties[k];
+    const e = (p.enum || (p.anyOf && p.anyOf[0] && p.anyOf[0].enum));
+    const bits = [];
+    if (e) bits.push(e.length + ' allowed values');
+    if (d.limits[k]) bits.push('max ' + d.limits[k]);
+    if (p.anyOf) bits.push('nullable');
+    return k + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+  }).join(' · ');
+}
+
 const lsCfgKey = (id) => 'cwz_cfg_' + id;
 function cfgOverride(id){
   try { return JSON.parse(localStorage.getItem(lsCfgKey(id)) || 'null'); } catch(_) { return null; }
 }
-// The output shape actually used: a local edit wins over the project's own config.
+// The output shape actually used.
+//   1. a schema you pinned by hand always wins
+//   2. "auto", an edited prompt, or a project with no schema  -> derive it from the prompt
+//   3. otherwise the schema declared in the project file
 function activeConfig(){
   const p = currentProject();
-  if (!p) return { roles:null, schema:null, display:null };
-  const o = cfgOverride(p.id);
-  return {
-    roles:   o && 'roles'   in o ? o.roles   : p.roles,
-    schema:  o && 'schema'  in o ? o.schema  : p.schema,
-    display: o && 'display' in o ? o.display : p.display,
-  };
+  if (!p) return { roles:null, schema:null, display:null, auto:false };
+  const o = cfgOverride(p.id) || {};
+  const roles   = 'roles'   in o ? o.roles   : p.roles;
+  let   display = 'display' in o ? o.display : p.display;
+  const pinned  = 'schema'  in o ? o.schema  : p.schema;
+  const derived = deriveShape(activeTemplate());
+
+  const pinnedByHand = 'schema' in o;
+  let schema, auto = false;
+  if (pinnedByHand && o.schema !== 'auto') {
+    schema = o.schema;                                     // you set it explicitly (object, or null to disable)
+  } else if (pinnedByHand || p.schema === 'auto' || p.schema == null) {
+    schema = derived ? derived.schema : null; auto = true; // asked for auto, or none declared
+  } else if (hasEdit()) {
+    schema = derived ? derived.schema : p.schema;          // prompt was edited, so follow the prompt
+    auto = !!derived;
+  } else {
+    schema = p.schema;                                     // untouched project, use its declared schema
+  }
+
+  // Character limits follow the prompt too, unless display was pinned by hand.
+  if (auto && derived && Object.keys(derived.limits).length && !('display' in o)) {
+    display = { ...(display || {}), limits: { ...((display && display.limits) || {}), ...derived.limits } };
+  }
+  return { roles, schema, display, auto };
 }
 function displayCfg(){ return activeConfig().display || {}; }
 function roleLabels(){
@@ -487,6 +594,7 @@ function hasCfgEdit(){ const p = currentProject(); return !!(p && cfgOverride(p.
 // them and returns empty fields instead.
 function shapeWarning(){
   const cfg = activeConfig();
+  if (cfg.auto) return null;
   const t = activeTemplate();
   const props = (cfg.schema && cfg.schema.properties) || null;
   if (!props || !t) return null;
@@ -617,7 +725,7 @@ function newLocalProject(seed){
     id, name,
     description: seed ? seed.description : '',
     template: seed ? (localStorage.getItem(lsEditKey(seed.id)) || seed.template) : STARTER_PROMPT,
-    schema: seed ? seed.schema : null,
+    schema: seed ? seed.schema : 'auto',
     display: seed ? seed.display : null,
     roles: seed ? seed.roles : null,
     local: true,
@@ -1289,6 +1397,19 @@ $('btn-manual-load').onclick = loadManual;
 /* ================= prompt drawer ================= */
 function openDrawer(){ $('drawer').classList.add('open'); $('scrim').classList.add('open'); }
 function closeDrawer(){ $('drawer').classList.remove('open'); $('scrim').classList.remove('open'); }
+function shapeHint(){
+  const c = activeConfig();
+  if (c.auto) {
+    return '<b>Following your prompt automatically.</b> Read from the OUTPUT FORMAT block: '
+      + esc(shapeSummary())
+      + '. Change that block in your prompt and this updates with it — nothing to edit here. '
+      + 'Replace <b>"auto"</b> with a schema object to pin it by hand, or <b>null</b> to turn enforcement off.';
+  }
+  return 'This schema is <b>pinned by hand</b>, so it will not follow prompt edits. '
+    + 'Set <b>"schema": "auto"</b> to derive it from your prompt\'s OUTPUT FORMAT block instead, '
+    + 'or <b>null</b> to turn enforcement off.';
+}
+
 let drawerTab = 'prompt';
 function setDrawerTab(tab){
   drawerTab = tab;
@@ -1298,7 +1419,7 @@ function setDrawerTab(tab){
   $('schema-editor').style.display = tab === 'shape' ? '' : 'none';
   $('drawer-hint').innerHTML = tab === 'prompt'
     ? 'Placeholders <b>{{conversation_so_far}}</b>, <b>{{new_lead_message}}</b> and <b>{{issue_summary}}</b> are filled on every run.'
-    : 'The JSON shape the model must return. <b>schema</b> is enforced by the API, so any value not listed here cannot be produced — keep its action list in sync with your prompt. Set <b>"schema": null</b> to turn enforcement off and just parse whatever JSON the prompt asks for. <b>display</b> controls how the result is laid out; <b>limits</b> adds the character checks.';
+    : shapeHint();
   $('btn-prompt-save').textContent = 'Save';
 }
 $('dtab-prompt').onclick = () => setDrawerTab('prompt');
@@ -1308,9 +1429,7 @@ $('btn-drawer').onclick = () => {
   const p = currentProject();
   $('drawer-title').textContent = p ? 'Project · ' + p.name : 'Project';
   $('prompt-editor').value = activeTemplate();
-  const c = activeConfig();
-  $('schema-editor').value = JSON.stringify(
-    { roles: c.roles || null, schema: c.schema || null, display: c.display || null }, null, 2);
+  $('schema-editor').value = JSON.stringify(declaredShape(p), null, 2);
   setDrawerTab(drawerTab);
   openDrawer();
 };
@@ -1318,8 +1437,7 @@ $('btn-drawer').onclick = () => {
 function drawerDirty(){
   const p = currentProject();
   if (!p || !$('drawer').classList.contains('open')) return false;
-  const c = activeConfig();
-  const savedCfg = JSON.stringify({ roles:c.roles||null, schema:c.schema||null, display:c.display||null }, null, 2);
+  const savedCfg = JSON.stringify(declaredShape(p), null, 2);
   return $('prompt-editor').value !== activeTemplate() || $('schema-editor').value !== savedCfg;
 }
 function closeDrawerSafely(){
@@ -1345,9 +1463,9 @@ $('btn-prompt-save').onclick = () => {
     alert('The Output shape tab is not valid JSON, so nothing was saved:\n\n' + e.message);
     return;
   }
-  const clean = { roles: cfg.roles ?? null, schema: cfg.schema ?? null, display: cfg.display ?? null };
+  const clean = { roles: cfg.roles ?? null, schema: cfg.schema ?? 'auto', display: cfg.display ?? null };
   const sameCfg = JSON.stringify(clean) ===
-    JSON.stringify({ roles: p.roles || null, schema: p.schema || null, display: p.display || null });
+    JSON.stringify({ roles: p.roles || null, schema: p.schema == null ? 'auto' : p.schema, display: p.display || null });
 
   if (p.local) {
     // Your own project: the edits simply become the project.
@@ -1376,8 +1494,7 @@ $('btn-prompt-reset').onclick = () => {
   localStorage.removeItem(lsEditKey(p.id));
   localStorage.removeItem(lsCfgKey(p.id));
   $('prompt-editor').value = p.template;
-  $('schema-editor').value = JSON.stringify(
-    { roles: p.roles || null, schema: p.schema || null, display: p.display || null }, null, 2);
+  $('schema-editor').value = JSON.stringify(declaredShape(p), null, 2);
   renderProjectPicker();
 };
 

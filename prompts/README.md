@@ -34,7 +34,7 @@ A file with no JSON header and no `---` works too — it is just treated as prom
 | `description` | Subtitle under the header |
 | `default` | `true` on the project the app opens with |
 | `roles` | Renames "Customer"/"Expert" throughout the UI |
-| `schema` | JSON Schema. Present = the model's output is schema-enforced. Omit it and the app just parses whatever JSON comes back. |
+| `schema` | `"auto"` (or omitted) derives the schema from your prompt's OUTPUT FORMAT block, so editing the prompt is enough. A JSON Schema object pins it by hand. `null` turns enforcement off. |
 | `display.headline` | Field shown as the big chip |
 | `display.reason` | Field shown after "Why:" |
 | `display.message` | Field offered as the draft to accept and send |
@@ -44,6 +44,24 @@ A file with no JSON header and no `---` works too — it is just treated as prom
 
 Every `display` key is optional; without them the app guesses from the field
 names and falls back to listing whatever the model returned.
+
+## Automatic output shape
+
+By default (`"schema": "auto"`, or no `schema` key) the app reads the JSON block
+under `** OUTPUT FORMAT **` in your prompt and builds the schema from it:
+
+| In your prompt | Becomes |
+|---|---|
+| `"action": "<one of: A, B, C>"` | an enum restricted to A, B, C |
+| `"confidence": "high" or "low"` | an enum of high / low |
+| `"price": "<... or null for non-paid actions>"` | nullable |
+| `"reason": "<..., 140 characters max>"` | a 140-character check in the QA rail |
+| a `Hard limit: 180 characters` line under `WRITING THE MESSAGE` | a 180-character check on `message` |
+
+Change the block, and the schema changes with it. A project that declares an
+explicit `schema` object keeps using it, **except** when you have edited its
+prompt in the browser — then the edited prompt wins, since the declared schema
+is by definition out of date.
 
 ## Placeholders
 

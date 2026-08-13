@@ -1336,7 +1336,16 @@ function renderRail(data){
 
   $('r-raw').textContent = JSON.stringify(p, null, 2);
   const u = data.usage || {};
-  $('r-meta').textContent = `${data.model} \u00b7 ${((data.latency_ms||0)/1000).toFixed(1)}s \u00b7 ${u.prompt_tokens ?? '\u2013'} in / ${u.completion_tokens ?? '\u2013'} out`;
+  const c = activeConfig();
+  let shape = 'no schema enforced';
+  if (c.schema && c.schema.properties) {
+    const ek = Object.keys(c.schema.properties)
+      .find(k => Array.isArray(c.schema.properties[k].enum) && c.schema.properties[k].enum.length > 2);
+    shape = (c.auto ? 'auto' : 'pinned by hand')
+      + (ek ? ' \u00b7 ' + c.schema.properties[ek].enum.length + ' ' + ek + ' values' : '');
+  }
+  $('r-meta').textContent = `${data.model} \u00b7 ${((data.latency_ms||0)/1000).toFixed(1)}s \u00b7 ${u.prompt_tokens ?? '\u2013'} in / ${u.completion_tokens ?? '\u2013'} out \u00b7 shape: ${shape}`
+    + (data.retried ? ' \u00b7 retried once (first reply was blank)' : '');
 }
 
 

@@ -656,7 +656,7 @@ function renderOriginBar(){
 }
 
 function renderWarnBar(){
-  const w = onelineWarning() || shapeWarning();
+  const w = orderWarning() || onelineWarning() || shapeWarning();
   const bar = $('warn-bar');
   bar.textContent = w || '';
   bar.classList.toggle('on', !!w);
@@ -816,6 +816,26 @@ function boolFlagKind(m){
   return null;
 }
 const MSG_KEYS  = ['messages','conversation','turns','thread','dialogue','dialog','chat','transcript','history','exchanges'];
+const TIME_KEYS = ['timestamp','time','created_at','createdat','sent_at','sentat','date','datetime','ts','created','sequence','seq','order','index','position'];
+function msgTime(m){
+  const v = firstKey(m, TIME_KEYS);
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  const n = Date.parse(v);
+  if (!isNaN(n)) return n;
+  const asNum = Number(v);
+  return isNaN(asNum) ? null : asNum;
+}
+// Put the thread back in real order when the export carries a timestamp or sequence.
+function sortByTime(raw, msgs){
+  if (!Array.isArray(raw) || raw.length !== msgs.length) return msgs;
+  const times = raw.map(msgTime);
+  if (times.some(t => t == null)) return msgs;
+  return msgs
+    .map((m, i) => ({ m, t: times[i], i }))
+    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .map(x => x.m);
+}
 
 // Unknown speaker names: first distinct name = customer, later names = expert.
 function speakerKind(label, order){
@@ -898,7 +918,7 @@ function normalizeConvo(x){
     const raw = findMessagesDeep(x, 0);
     let messages = [];
     if (typeof raw === 'string') messages = parseConvoText(raw);
-    else if (Array.isArray(raw)) messages = raw.map(m => toMessage(m, order)).filter(m => m.text);
+    else if (Array.isArray(raw)) { messages = sortByTime(raw, raw.map(m => toMessage(m, order))).filter(m => m.text); }
     else if (looksLikeMessage(x)) messages = [toMessage(x, order)];
     const first = [strKey(x,['first_name','firstname']), strKey(x,['last_name','lastname'])].filter(Boolean).join(' ');
     return {
@@ -1104,6 +1124,28 @@ const ACTION_CLASS = [
 ];
 const PAID = /live consult|extended|beyond|document review/i;
 
+// An export sorted by message text rather than time produces an incoherent
+// thread, and the model responds with blank or "placeholder" fields.
+function looksAlphabetical(msgs){
+  const texts = msgs.filter(m => m.kind === 'customer' || m.kind === 'expert').map(m => (m.text || '').trim());
+  if (texts.length < 6) return false;
+  let ordered = 0, pairs = 0;
+  for (let i = 1; i < texts.length; i++) {
+    if (!texts[i - 1] || !texts[i]) continue;
+    pairs++;
+    if (texts[i - 1].localeCompare(texts[i], undefined, { sensitivity: 'base' }) <= 0) ordered++;
+  }
+  return pairs >= 5 && ordered / pairs >= 0.8;
+}
+function orderWarning(){
+  if (!S.thread.length) return null;
+  if (!looksAlphabetical(S.thread)) return null;
+  return 'This conversation looks sorted alphabetically rather than in the order it happened, '
+    + 'so the thread does not read as a real exchange. The model cannot cite a specific detail '
+    + 'from a scrambled thread and will return blank or "placeholder" fields. Re-export it sorted '
+    + 'by time, or click a message to fix the speaker and reorder before running.';
+}
+
 function renderThread(){
   const t = $('thread');
   t.innerHTML = '';
@@ -1133,6 +1175,7 @@ function renderThread(){
     t.appendChild(div);
   });
   t.scrollTop = t.scrollHeight;
+  renderWarnBar();
 }
 
 // Pick a field by config, else by name pattern, so a brand-new project with a
